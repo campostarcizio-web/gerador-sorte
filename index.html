@@ -100,7 +100,7 @@ button.sm{padding:7px 11px;font-size:.82rem;font-weight:600}
 .grid60 button{font-family:var(--mono);font-weight:700;font-size:.85rem;padding:0;aspect-ratio:1;max-width:100%;border-radius:50%;background:var(--bg);color:var(--muted);border:1px solid var(--line);font-variant-numeric:tabular-nums}
 .grid60 button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
 .totais{display:flex;flex-direction:column;gap:8px}
-.totais .cards{grid-template-columns:repeat(3,minmax(0,1fr))}
+.totais .cards{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
 .card.tot{border-color:var(--hit);background:var(--hit-soft)}
 .card.tot .v{font-size:1.9rem}
 button.alt{background:var(--surface);color:var(--accent);border-color:var(--accent)}
@@ -123,6 +123,10 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
 .leg{display:flex;gap:12px;flex-wrap:wrap;font-size:.78rem;color:var(--muted)}
 .leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
 .totais.lm .cards{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}
+.filtros{border:0;margin:0;padding:0;min-width:0}
+.filtros legend{padding:0;margin-bottom:6px}
+.chk{display:flex;align-items:center;gap:8px;font-size:.9rem;color:var(--fg);text-transform:none;letter-spacing:0;font-weight:400;cursor:pointer}
+.chk input{width:18px;height:18px;accent-color:var(--accent);margin:0}
 .best{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
 .best .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:.85rem;color:var(--muted)}
 </style>
@@ -160,6 +164,8 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
       <div class="field">
         <label for="meta">Meta por concurso</label>
         <select id="meta">
+          <option value="1">1 acerto (1+)</option>
+          <option value="2">Duque (2+)</option>
           <option value="3">Terno (3+)</option>
           <option value="4" selected>Quadra (4+)</option>
           <option value="5">Quina (5+)</option>
@@ -176,6 +182,13 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
         </select>
         <span class="hint" id="objHint">soma de todas as linhas</span>
       </div>
+      <fieldset class="field filtros">
+        <legend class="lbl">Filtros das linhas</legend>
+        <label class="chk"><input type="checkbox" id="fSeq" checked> Sem números em sequência</label>
+        <label class="chk"><input type="checkbox" id="fPar" checked> Equilíbrio par/ímpar</label>
+        <label class="chk"><input type="checkbox" id="fTodos"> Incluir todos de 1 a 60</label>
+        <span class="hint">ex.: 35 e 36 não; 6 números = 3 pares e 3 ímpares; todas as 60 dezenas no conjunto</span>
+      </fieldset>
       <div class="field" id="limField">
         <label for="lim">Dezenas em comum</label>
         <select id="lim">
@@ -17305,6 +17318,8 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
 <script>
 const $=id=>document.getElementById(id);
 const NOMES=['','','','Terno','Quadra','Quina','Sena'];
+const PLURAL=['','1 acerto','Duques','Ternos','Quadras','Quinas','Senas'];
+const META=['','1 acerto','duque','terno','quadra','quina','sena'];
 let current=[], draws=[], cfg=null, busy=false;
 
 /* ---------- amostragem ---------- */
@@ -17352,15 +17367,29 @@ function split(teste){const t=Math.min(teste,draws.length-50);return {treino:dra
    Σ g(acertos) sobre os concursos de treino ainda não cobertos, onde
    g = 1 + 0,25·(acertos − meta) quando acertos ≥ meta, 0,02 quando falta 1 acerto, 0 abaixo disso.
    Depois de escolhida, a linha marca como cobertos os concursos em que atingiu a meta. */
-function otimizarLinha(train,byNum,covered,x,k,iters,prev=[],lim=99,T0=1.5,eq=false){
+function otimizarLinha(train,byNum,covered,x,k,iters,prev=[],lim=99,T0=1.5,eq=false,semSeq=false,parImpar=false){
   const D=train.length, g=new Float64Array(8);
   for(let h=0;h<=7;h++) g[h]=h>=k?(eq?1:1+0.25*(h-k)):(h===k-1?0.02:0);
-  // semente: dezenas de um concurso ainda não coberto + complemento aleatório
+  // filtros: sem dezenas consecutivas (ex.: 35 e 36) e equilíbrio par/ímpar (diferença máxima de 1)
+  const maxPar=Math.ceil(x/2);
+  let inL, line, pares;
+  const cabe=(v,sai)=>{ // v pode entrar no lugar de "sai" (0 = nenhuma) sem violar os filtros
+    if(semSeq&&((v>1&&inL[v-1]&&v-1!==sai)||(v<60&&inL[v+1]&&v+1!==sai))) return false;
+    if(parImpar){const p=pares-(sai&&sai%2===0?1:0)+(v%2===0?1:0), n=line.length-(sai?1:0)+1, i=n-p;
+      if(n===x?Math.abs(p-i)>1:(p>maxPar||i>maxPar)) return false}
+    return true;
+  };
+  // semente: dezenas de um concurso ainda não coberto + complemento aleatório, respeitando os filtros
   const unc=[];for(let d=0;d<D;d++) if(!covered[d]) unc.push(d);
-  const inL=new Uint8Array(61), line=[];
-  const seed=unc.length?train[unc[rnd(unc.length)]].n:[];
-  for(const v of seed){if(line.length<x){line.push(v);inL[v]=1}}
-  while(line.length<x){const v=1+rnd(60);if(!inL[v]){inL[v]=1;line.push(v)}}
+  for(let tent=0;;tent++){
+    inL=new Uint8Array(62); line=[]; pares=0;
+    const seed=unc.length&&tent<20?train[unc[rnd(unc.length)]].n.slice():[];
+    for(let i=seed.length-1;i>0;i--){const j=rnd(i+1);[seed[i],seed[j]]=[seed[j],seed[i]]}
+    for(const v of seed){if(line.length<x&&!inL[v]&&cabe(v,0)){line.push(v);inL[v]=1;if(v%2===0)pares++}}
+    let guarda=0;
+    while(line.length<x&&guarda++<5000){const v=1+rnd(60);if(!inL[v]&&cabe(v,0)){inL[v]=1;line.push(v);if(v%2===0)pares++}}
+    if(line.length===x) break;
+  }
   const hits=new Int8Array(D);
   for(const v of line) for(const d of byNum[v]) hits[d]++;
   let score=0;for(let d=0;d<D;d++) if(!covered[d]) score+=g[hits[d]];
@@ -17373,7 +17402,9 @@ function otimizarLinha(train,byNum,covered,x,k,iters,prev=[],lim=99,T0=1.5,eq=fa
   const T1=0.01;
   for(let it=0;it<iters;it++){
     const T=T0*Math.pow(T1/T0,it/iters);
-    const pi=rnd(x), a=line[pi]; let b; do{b=1+rnd(60)}while(inL[b]);
+    const pi=rnd(x), a=line[pi]; let b=0;
+    for(let t=0;t<30;t++){const c=1+rnd(60);if(!inL[c]&&cabe(c,a)){b=c;break}}
+    if(!b) continue;
     let delta=0;
     for(const d of byNum[a]){if(!covered[d]) delta+=g[hits[d]-1]-g[hits[d]]; hits[d]--}
     for(const d of byNum[b]){if(!covered[d]) delta+=g[hits[d]+1]-g[hits[d]]; hits[d]++}
@@ -17381,7 +17412,7 @@ function otimizarLinha(train,byNum,covered,x,k,iters,prev=[],lim=99,T0=1.5,eq=fa
     for(let j=0;j<P.length;j++){const o=ov[j],n=o-P[j][a]+P[j][b];dexc+=Math.max(0,n-lim)-Math.max(0,o-lim)}
     delta-=PEN*dexc;
     if(delta>=0||Math.random()<Math.exp(delta/T)){
-      line[pi]=b;inL[a]=0;inL[b]=1;score+=delta;exc+=dexc;
+      line[pi]=b;inL[a]=0;inL[b]=1;score+=delta;exc+=dexc;pares+=(b%2===0?1:0)-(a%2===0?1:0);
       for(let j=0;j<P.length;j++) ov[j]+=P[j][b]-P[j][a];
       if(exc===0&&score>best+1e-9){best=score;bestLine=line.slice()}
     }else{
@@ -17498,11 +17529,62 @@ async function gerarFech(){
   travar(false);
 }
 
+/* filtro "incluir todos de 1 a 60": insere cada dezena ausente na troca que menos custa
+   (sem quebrar os outros filtros), depois melhora as linhas só com trocas que não deixam dezena faltando */
+function garantirTodos(lines,treino,byNum,k,eq,x,semSeq,parImpar,lim){
+  const D=treino.length, g=new Float64Array(8);
+  for(let h=0;h<=7;h++) g[h]=h>=k?(eq?1:1+0.25*(h-k)):(h===k-1?0.02:0);
+  const L=lines.map(l=>l.slice()), cnt=new Int16Array(62);
+  L.forEach(l=>l.forEach(v=>cnt[v]++));
+  const inL=L.map(l=>{const m=new Uint8Array(62);l.forEach(v=>m[v]=1);return m});
+  const hits=L.map(l=>{const h=new Int8Array(D);for(const v of l)for(const d of byNum[v])h[d]++;return h});
+  const pode=(i,a,b,comLim)=>{
+    const m=inL[i]; if(m[b]) return false;
+    if(semSeq&&((b>1&&m[b-1]&&b-1!==a)||(b<60&&m[b+1]&&b+1!==a))) return false;
+    if(parImpar){const p=L[i].reduce((s,v)=>s+(v%2===0),0)-(a%2===0)+(b%2===0);if(Math.abs(2*p-x)>1) return false}
+    if(comLim) for(let j=0;j<L.length;j++){if(j===i)continue;let o=0;for(const v of L[i]) o+=inL[j][v];o+=inL[j][b]-inL[j][a];if(o>lim) return false}
+    return true;
+  };
+  const ganho=(i,a,b)=>{const h=hits[i];let dl=0;
+    for(const d of byNum[a]){dl+=g[h[d]-1]-g[h[d]];h[d]--}
+    for(const d of byNum[b]){dl+=g[h[d]+1]-g[h[d]];h[d]++}
+    for(const d of byNum[b]) h[d]--; for(const d of byNum[a]) h[d]++;
+    return dl};
+  const trocar=(i,a,b)=>{L[i][L[i].indexOf(a)]=b;inL[i][a]=0;inL[i][b]=1;cnt[a]--;cnt[b]++;
+    for(const d of byNum[a]) hits[i][d]--; for(const d of byNum[b]) hits[i][d]++};
+  let trocas=0; const faltando=[];
+  for(let m=1;m<=60;m++){
+    if(cnt[m]) continue;
+    let melhor=null;
+    for(const comLim of [true,false]){
+      for(let i=0;i<L.length;i++) for(const a of L[i]){
+        if(cnt[a]<2||!pode(i,a,m,comLim)) continue;
+        const dl=ganho(i,a,m); if(!melhor||dl>melhor.dl) melhor={i,a,dl};
+      }
+      if(melhor) break;
+    }
+    if(melhor){trocar(melhor.i,melhor.a,m);trocas++} else faltando.push(m);
+  }
+  // melhoria: trocas que aumentam a pontuação sem deixar nenhuma dezena de fora
+  for(let passe=0;passe<3;passe++){
+    let mudou=false;
+    for(let i=0;i<L.length;i++){
+      let melhor=null;
+      for(const a of L[i]){ if(cnt[a]<2) continue;
+        for(let b=1;b<=60;b++){ if(!pode(i,a,b,true)) continue;
+          const dl=ganho(i,a,b); if(dl>1e-9&&(!melhor||dl>melhor.dl)) melhor={a,b,dl}}}
+      if(melhor){trocar(i,melhor.a,melhor.b);mudou=true}
+    }
+    if(!mudou) break;
+  }
+  return {lines:L.map(l=>l.sort((p,q)=>p-q)),faltando,trocas};
+}
+
 /* executa reinícios da otimização em paralelo, um Web Worker por núcleo */
 function criarPool(treino,byNum){
   try{
     const n=Math.min(8,Math.max(2,navigator.hardwareConcurrency||4));
-    const src=`${rnd.toString()}\n${otimizarLinha.toString()}\nlet T;onmessage=e=>{const m=e.data;if(m.init){T=m;return}postMessage(otimizarLinha(T.train,T.byNum,m.covered,m.x,m.k,m.iters,m.prev,m.lim,m.T0,m.eq))}`;
+    const src=`${rnd.toString()}\n${otimizarLinha.toString()}\nlet T;onmessage=e=>{const m=e.data;if(m.init){T=m;return}postMessage(otimizarLinha(T.train,T.byNum,m.covered,m.x,m.k,m.iters,m.prev,m.lim,m.T0,m.eq,m.semSeq,m.parImpar))}`;
     const url=URL.createObjectURL(new Blob([src],{type:'text/javascript'}));
     const ws=Array.from({length:n},()=>new Worker(url));
     const train=treino.map(d=>({n:d.n}));
@@ -17527,6 +17609,7 @@ async function gerarOtim(rodadas=1){
   const x=parseInt($('x').value,10),n=parseInt($('n').value,10),k=parseInt($('meta').value,10),t=parseInt($('teste').value,10);
   if(!(x>=6&&x<=20)){showErr('X precisa ser um número inteiro entre 6 e 20.');return}
   if(!(n>=1&&n<=100)){showErr('Linhas precisa ser um número entre 1 e 100.');return}
+  if($('fTodos').checked&&n*x<60){showErr(`Para incluir todas as dezenas de 1 a 60, linhas × números precisa dar pelo menos 60. Com ${x} números por linha, use pelo menos ${Math.ceil(60/x)} linhas.`);return}
   if(!(t>=0&&t<=draws.length-200)){showErr(`Concursos de teste precisa ficar entre 0 e ${fmtN(draws.length-200)}, para sobrar amostragem de otimização.`);return}
   $('err').hidden=true; travar(true);
   $('rel').hidden=true; $('prog').hidden=false;
@@ -17536,15 +17619,15 @@ async function gerarOtim(rodadas=1){
   const byNumT=byNum.map(a=>Int32Array.from(a));
   let covered=new Uint8Array(D), lines=[]; const zero=new Uint8Array(D);
   const obj=$('obj').value, soma=obj==='soma', lim=soma?parseInt($('lim').value,10):99;
-  const eq=$('meta').value==='4t';
+  const eq=$('meta').value==='4t', semSeq=$('fSeq').checked, parImpar=$('fPar').checked;
   const busca=$('busca').value, maxima=busca==='max', prof=busca==='prof';
   const pool=maxima?criarPool(treino,byNumT):null;
   const restarts=maxima?Math.max(4,pool?pool.n:4):(prof?4:2);
   const iters=maxima?60000:(prof?40000:(soma?12000:7000)), T0=maxima?3:1.5;
   const passes=maxima&&soma?1:0, etapas=n*(1+passes);
   const melhorDe=async(cov,prev)=>{
-    const tarefas=Array.from({length:restarts},()=>({covered:cov,x,k,iters,prev,lim,T0,eq}));
-    const res=pool?await pool.rodar(tarefas):tarefas.map(m=>otimizarLinha(treino,byNumT,m.covered,x,k,iters,prev,lim,T0,eq));
+    const tarefas=Array.from({length:restarts},()=>({covered:cov,x,k,iters,prev,lim,T0,eq,semSeq,parImpar}));
+    const res=pool?await pool.rodar(tarefas):tarefas.map(m=>otimizarLinha(treino,byNumT,m.covered,x,k,iters,prev,lim,T0,eq,semSeq,parImpar));
     return res.reduce((a,b)=>b.score>a.score?b:a);
   };
   const t0=Date.now(), total=etapas*rodadas; let rod=0, cab='';
@@ -17606,22 +17689,26 @@ async function gerarOtim(rodadas=1){
     }
     return sel;
   }
-  if(rodadas>1){
-    lines=melhorConjunto.lines;
+  if(rodadas>1) lines=melhorConjunto.lines;
+  let cobTodos=null;
+  if($('fTodos').checked){cobTodos=garantirTodos(lines,treino,byNumT,k,eq,x,semSeq,parImpar,lim);lines=cobTodos.lines}
+  if(rodadas>1||cobTodos){
     covered=new Uint8Array(D);
     for(const l of lines){const has=new Uint8Array(61);l.forEach(v=>has[v]=1);treino.forEach((d,j)=>{let h=0;for(const v of d.n)h+=has[v];if(h>=k)covered[j]=1})}
   }
   $('progBar').style.width='100%';
-  current=lines; cfg={mode:'otim',x,n,k,t};
+  current=lines; cfg={mode:'otim',x,n,k,t,soma};
   const cob=covered.reduce((s,v)=>s+v,0);
   const out=$('out');out.classList.remove('fresh');void out.offsetWidth;out.classList.add('fresh');
   render(null);
   let premios=0; const tot=new Array(7).fill(0);
   for(const l of lines){const has=new Uint8Array(61);l.forEach(v=>has[v]=1);for(const d of treino){let h=0;for(const v of d.n)h+=has[v];tot[h]++;if(h>=k)premios++}}
-  const totTxt=` · quadras ${fmtN(tot[4])}, quinas ${fmtN(tot[5])}, senas ${fmtN(tot[6])}`+(rodadas>1?` · melhores de ${rodadas} rodadas (${fmtN(banco.size)} linhas avaliadas)`:'');
+  const filtTxt=[semSeq&&'sem sequências',parImpar&&'par/ímpar equilibrado',
+    cobTodos&&(cobTodos.faltando.length?`faltaram ${cobTodos.faltando.map(pad).join(' ')}`:`todas as 60 dezenas presentes (${cobTodos.trocas} trocas)`)].filter(Boolean).join(', ');
+  const totTxt=' · '+[...Array(7).keys()].filter(h=>h>=Math.min(k,4)&&h>=1).map(h=>`${PLURAL[h].toLowerCase()} ${fmtN(tot[h])}`).join(', ').replace(/^1 acerto (\S+)/,'1 acerto: $1')+(filtTxt?` · filtros: ${filtTxt}`:'')+(rodadas>1?` · melhores de ${rodadas} rodadas (${fmtN(banco.size)} linhas avaliadas)`:'');
   $('info').textContent=soma
-    ?`${n} linhas × ${x} números · ${fmtN(premios)} ${eq?'prêmios (quadras + quinas + senas)':NOMES[k].toLowerCase()+'s ou mais'} ${eq?'somados':'somadas'} nos ${fmtN(D)} concursos de otimização · até ${lim} dezenas em comum${totTxt}`
-    :`${n} linhas × ${x} números · meta ${NOMES[k].toLowerCase()} · ${fmtN(cob)} de ${fmtN(D)} concursos de otimização cobertos${totTxt}`;
+    ?`${n} linhas × ${x} números · ${fmtN(premios)} ${eq?'prêmios (quadras + quinas + senas)':(k===1?'prêmios de 1+ acerto':META[k]+'s ou mais')} ${eq||k===1?'somados':'somadas'} nos ${fmtN(D)} concursos de otimização · até ${lim} dezenas em comum${totTxt}`
+    :`${n} linhas × ${x} números · meta ${META[k]} · ${fmtN(cob)} de ${fmtN(D)} concursos de otimização cobertos${totTxt}`;
   $('prog').hidden=true; $('toast').textContent='';
   travar(false);
 }
@@ -17670,7 +17757,9 @@ function bloco(S,rotulo,classe,completo){
   const esp=h=>comb(x,h)*comb(60-x,6-h)/comb(60,6)*total;
   const media=S.dist.reduce((s,v,h)=>s+v*h,0)/total;
   const maxDist=Math.max(...S.dist,...[0,1,2,3,4,5,6].map(esp));
-  const razao=S.cobEsp>0?S.cob/S.cobEsp:0;
+  const porPremio=cfg.mode==='otim'&&cfg.soma;
+  const premObs=S.dist.reduce((a,v,h)=>a+(h>=k?v:0),0), premEsp=[0,1,2,3,4,5,6].filter(h=>h>=k).reduce((a,h)=>a+esp(h),0);
+  const razao=porPremio?(premEsp>0?premObs/premEsp:0):(S.cobEsp>0?S.cob/S.cobEsp:0);
   const rows=[0,1,2,3,4,5,6].map(h=>{
     const e=esp(h),o=S.dist[h],r=e>0?o/e:0, cls=e<0.5?'':(r>=1.1?'up':(r<=0.9?'down':''));
     return `<tr><td>${h} acerto${h===1?'':'s'}${h>=3?` <span class="pill">${NOMES[h]}</span>`:''}</td>
@@ -17685,12 +17774,12 @@ function bloco(S,rotulo,classe,completo){
     <div class="totais">
       <span class="lbl">Total do conjunto · ${current.length} linhas somadas</span>
       <div class="cards">
-        ${[4,5,6].map(h=>`<div class="card tot"><span class="lbl">${NOMES[h]}s</span><span class="v">${fmtN(S.dist[h])}</span><span class="d">acaso: ${fmtD(esp(h),h===4?1:2)}</span></div>`).join('')}
+        ${[1,2,3,4,5,6].filter(h=>h>=Math.min(k,4)).map(h=>`<div class="card tot"><span class="lbl">${PLURAL[h]}</span><span class="v">${fmtN(S.dist[h])}</span><span class="d">acaso: ${(esp(h)>=100?fmtN(Math.round(esp(h))):fmtD(esp(h),h===4?1:2))}</span></div>`).join('')}
       </div>
     </div>
     <div class="cards">
-      <div class="card"><span class="lbl">Concursos com ${NOMES[k].toLowerCase()}+</span><span class="v">${fmtN(S.cob)}</span><span class="d">em pelo menos uma linha · acaso: ${fmtD(S.cobEsp,1)}</span></div>
-      <div class="card"><span class="lbl">Eficiência × acaso</span><span class="v ratio ${razao>=1.1?'up':razao<=0.9?'down':''}">${fmtD(razao,2)}×</span><span class="d">cobertura observada / esperada</span></div>
+      <div class="card"><span class="lbl">Concursos com ${META[k]}+</span><span class="v">${fmtN(S.cob)}</span><span class="d">em pelo menos uma linha · acaso: ${fmtD(S.cobEsp,1)}</span></div>
+      <div class="card"><span class="lbl">Eficiência × acaso</span><span class="v ratio ${razao>=1.1?'up':razao<=0.9?'down':''}">${fmtD(razao,2)}×</span><span class="d">${porPremio?'prêmios na meta: observados / esperados':'cobertura observada / esperada'}</span></div>
       <div class="card"><span class="lbl">Melhor resultado</span><span class="v">${S.bestMax} acertos</span><span class="d">linha ${pad(top.i+1)} · conc. ${top.bestDraw.c}</span></div>
       <div class="card"><span class="lbl">Média de acertos</span><span class="v">${fmtD(media,3)}</span><span class="d">por linha e concurso · acaso: ${fmtD(6*x/60,3)}</span></div>
       ${S.gar?`<div class="card"><span class="lbl">${cfg.m}+ sorteadas no grupo</span><span class="v">${fmtN(S.gar.cond)}</span><span class="d">concursos · acaso: ${fmtD(S.gar.condEsp,1)}</span></div>
