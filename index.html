@@ -10163,7 +10163,21 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
 3801;2026-10-09;3 4 7 8 9 11 12 13 15 17 19 20 21 23 24
 3802;2026-10-11;2 3 5 6 9 10 11 12 14 15 19 20 21 23 24
 3803;2026-10-13;3 6 7 8 9 11 12 13 15 16 19 20 21 22 23
-3804;2026-10-14;1 2 6 7 8 12 14 15 16 17 18 19 21 24 25</script>
+3804;2026-10-14;1 2 6 7 8 12 14 15 16 17 18 19 21 24 25
+3805;2026-10-15;3 5 6 7 8 10 11 13 14 15 19 22 23 24 25
+3806;2026-10-16;4 5 6 7 8 9 11 13 16 19 20 21 23 24 25
+3807;2026-10-18;1 3 4 7 10 11 13 16 17 19 20 22 23 24 25
+3808;2026-10-19;1 4 7 10 12 13 14 15 17 18 19 20 21 22 24
+3809;2026-10-20;1 3 4 5 6 8 9 11 17 18 19 20 21 23 25
+3810;2026-10-21;1 5 6 7 10 11 14 15 16 17 18 19 20 23 24
+3811;2026-10-22;1 3 5 7 8 9 10 11 12 15 16 18 19 23 25
+3812;2026-10-23;3 4 5 7 8 11 13 16 17 19 20 21 23 24 25
+3813;2026-10-24;4 5 6 8 10 12 13 14 15 16 17 20 22 23 25
+3814;2026-10-26;1 4 6 8 9 12 13 15 16 17 18 21 22 24 25
+3815;2026-10-27;3 5 6 9 10 11 12 13 14 15 16 17 19 23 25
+3816;2026-10-28;1 2 3 4 6 8 13 14 16 17 18 20 22 24 25
+3817;2026-10-29;2 6 8 10 11 12 13 15 16 18 19 22 23 24 25
+3818;2026-10-30;2 3 4 5 6 12 14 15 16 17 19 20 22 23 24</script>
 <script type="text/plain" id="dadosQN">concurso;data;dezenas
 1;1994-03-13;25 45 60 76 79
 2;1994-03-17;13 30 58 63 64
@@ -17319,7 +17333,8 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
 7152;2026-10-26;18 22 24 25 52
 7153;2026-10-27;18 36 53 64 67
 7154;2026-10-28;6 8 41 44 45
-7155;2026-10-29;14 29 33 53 72</script>
+7155;2026-10-29;14 29 33 53 72
+7156;2026-10-30;12 16 59 60 71</script>
 <script>
 const $=id=>document.getElementById(id);
 const NOMES=['','','','Terno','Quadra','Quina','Sena'];
@@ -17995,6 +18010,7 @@ gerar();
 const p2=v=>String(v).padStart(2,'0');
 function criarAba(C){
   const p=C.p, E=id=>document.getElementById(p+id);
+  const tem=(...ks)=>ks.some(k=>(C.filtros||[]).includes(k)), liga=id=>{const el=E(id);return !!(el&&el.checked)};
   const S={draws:[],lines:[],cfg:null,busy:false};
   const NV=C.base+C.U; // tamanho dos vetores indexados pela dezena
   const valido=v=>v>=C.base&&v<C.base+C.U;
@@ -18009,10 +18025,24 @@ function criarAba(C){
       <div class="field"><label for="${p}Lim">Dezenas em comum</label><select id="${p}Lim">${C.lims.map(v=>`<option value="${v}"${v===C.limDef?' selected':''}>até ${v}</option>`).join('')}</select><span class="hint">entre quaisquer 2 linhas</span></div>
       <div class="field"><label for="${p}Busca">Busca</label><select id="${p}Busca"><option value="rapida" selected>Rápida</option><option value="prof">Profunda</option></select><span class="hint" id="${p}BuscaHint">poucos segundos</span></div>
       <div class="field"><label for="${p}Teste">Concursos de teste</label><input type="number" id="${p}Teste" min="0" max="1500" value="300" inputmode="numeric"><span class="hint">os mais recentes, fora da otimização</span></div>
+      ${tem('seq','seqMax','par','todos','rep')?`<fieldset class="field filtros">
+        <legend class="lbl">Filtros das linhas</legend>
+        ${tem('seq')?`<label class="chk"><input type="checkbox" id="${p}FSeq" checked> Sem números em sequência</label>`:''}
+        ${tem('seqMax')?`<label class="chk"><input type="checkbox" id="${p}FSeqMax" checked> Máximo ${C.seqMax} números seguidos</label>`:''}
+        ${tem('par')?`<label class="chk"><input type="checkbox" id="${p}FPar" checked> Equilíbrio par/ímpar</label>`:''}
+        ${tem('par')&&C.paresFixos?C.paresFixos.map(q=>`<label class="chk"><input type="checkbox" id="${p}FP${q}"> ${q} pares e ${C.X.min-q} ímpar${C.X.min-q>1?'es':''}</label>`).join(''):''}
+        ${tem('todos')?`<label class="chk"><input type="checkbox" id="${p}FTodos"> Incluir todos de ${p2(C.base)} a ${p2(C.base+C.U-1)}</label>`:''}
+        ${tem('rep')?`<label class="chk"><input type="checkbox" id="${p}FRep"> Evitar repetir dezenas entre linhas</label>`:''}
+        <span class="hint">${[tem('seq')&&'sem sequência: 35 e 36 não',
+          tem('seqMax')&&`máximo ${C.seqMax} seguidos: permite até ${C.seqMax} números consecutivos na linha (ex.: 01 02 03 04 05), nunca ${C.seqMax+1}`,
+          tem('par')&&C.paresFixos&&`${C.paresFixos.map(q=>`${q} pares/${C.X.min-q} ímpar${C.X.min-q>1?'es':''}`).join(' e ')} valem para linhas de ${C.X.min} números`,
+          tem('seq','par')&&'filtros ligados juntos precisam ser atendidos ao mesmo tempo'].filter(Boolean).join('; ')}</span>
+      </fieldset>`:''}
       <div class="actions">
         <button type="button" id="${p}Copy">Copiar</button>
         <button type="submit" class="primary" id="${p}Gerar">GERAR SEQUÊNCIA</button>
         <button type="button" class="primary alt" id="${p}Gerar10">GERAR 10× (MELHORES)</button>
+        ${tem('otimizar')?`<button type="button" class="primary alt" id="${p}Otimizar" title="Troca só as dezenas que menos contribuem em cada linha, sem repetir dezenas entre as linhas">OTIMIZAR</button>`:''}
         <button type="button" class="verify" id="${p}Verificar">VERIFICAR</button>
       </div>
       <span class="err" id="${p}Err" hidden></span>
@@ -18039,7 +18069,7 @@ function criarAba(C){
     return rows.sort((a,b)=>a.c-b.c);
   }
   const erro=m=>{E('Err').textContent=m;E('Err').hidden=false};
-  function travar(on){S.busy=on;const sem=!S.draws.length;['Gerar','Gerar10'].forEach(id=>E(id).disabled=on||sem);E('Verificar').disabled=on||!S.lines.length}
+  function travar(on){S.busy=on;const sem=!S.draws.length;['Gerar','Gerar10'].forEach(id=>E(id).disabled=on||sem);E('Verificar').disabled=on||!S.lines.length;if(tem('otimizar'))E('Otimizar').disabled=on||!S.lines.length}
   function setDraws(rows,origem){
     S.draws=rows;S.lines=[];S.cfg=null;
     const f=rows[0],l=rows[rows.length-1];
@@ -18049,35 +18079,59 @@ function criarAba(C){
   }
   const split=t=>{const tt=Math.min(t,S.draws.length-200);return {treino:S.draws.slice(0,S.draws.length-tt),teste:S.draws.slice(S.draws.length-tt)}};
   function pesos(meta){
-    const g=new Float64Array(C.K+2), max=meta==='max', k=max?C.metaMaxK:parseInt(meta,10);
-    for(let h=0;h<=C.K;h++) g[h]=h>=k?1+0.25*(h-k):(h===k-1?0.05:(h===k-2?0.01:0));
+    const g=new Float64Array(C.K+5), max=meta==='max', k=max?C.metaMaxK:parseInt(meta,10);
+    for(let h=0;h<=C.K;h++) g[h]=k===0?(h===0?1:(h===1?0.05:0)):(h>=k?1+0.25*(h-k):(h===k-1?0.05:(h===k-2?0.01:0)));
+    for(let h=C.K+1;h<C.K+5;h++) g[h]=g[C.K];
     if(max&&C.zero){g[0]=1;g[1]=Math.max(g[1],0.05);g[2]=Math.max(g[2],0.01)}
     return {g,k,max};
   }
-  const premio=(h,P)=>h>=P.k||(P.max&&C.zero&&h===0);
+  const premio=(h,P)=>P.k===0?h===0:(h>=P.k||(P.max&&C.zero&&h===0));
+  // faixas mostradas: as premiadas da loteria e, se a meta for mais baixa, também as da meta
+  const faixasDe=P=>{const f=C.faixas.slice(), mn=Math.min(...f); if(P.k<mn&&!P.max){ if(P.k===0) f.push(0); else for(let h=mn-1;h>=P.k;h--) f.push(h) } return f};
   const sorteia=()=>C.base+rnd(C.U);
 
-  function otimizarLinha(train,byNum,X,iters,prev,lim,P){
-    const D=train.length,g=P.g, inL=new Uint8Array(NV), line=[];
-    const seed=train[rnd(D)].n; for(const v of seed){if(line.length<X){line.push(v);inL[v]=1}}
-    while(line.length<X){const v=sorteia();if(!inL[v]){inL[v]=1;line.push(v)}}
+  function otimizarLinha(train,byNum,X,iters,prev,lim,P,F={}){
+    const D=train.length,g=P.g, maxRun=F.maxRun||99, okPar=F.pares?new Set(F.pares):null, cap=F.cap||0, hi=C.base+C.U-1;
+    const pMax=okPar?Math.max(...F.pares):X, pMin=okPar?Math.min(...F.pares):0;
+    let inL, line, pares;
+    const cabe=(v,sai)=>{
+      if(maxRun<99){let lo=0;for(let w=v-1;w>=C.base&&inL[w]&&w!==sai;w--)lo++;let up=0;for(let w=v+1;w<=hi&&inL[w]&&w!==sai;w++)up++;if(lo+up+1>maxRun) return false}
+      if(okPar){const p=pares-(sai!==undefined&&sai%2===0?1:0)+(v%2===0?1:0), n=line.length-(sai!==undefined?1:0)+1, i=n-p;
+        if(n===X?!okPar.has(p):(p>pMax||i>X-pMin)) return false}
+      return true;
+    };
+    for(let tent=0;;tent++){
+      inL=new Uint8Array(NV+1); line=[]; pares=0;
+      const seed=tent<20?train[rnd(D)].n.slice():[];
+      for(let i=seed.length-1;i>0;i--){const j=rnd(i+1);[seed[i],seed[j]]=[seed[j],seed[i]]}
+      for(const v of seed){if(line.length<X&&!inL[v]&&cabe(v)){line.push(v);inL[v]=1;if(v%2===0)pares++}}
+      let guarda=0;
+      while(line.length<X&&guarda++<5000){const v=sorteia();if(!inL[v]&&cabe(v)){inL[v]=1;line.push(v);if(v%2===0)pares++}}
+      if(line.length===X) break;
+    }
+    const uso=new Uint16Array(NV+1); if(cap) for(const l of prev) for(const v of l) uso[v]++;
+    const PENR=5, repx=v=>cap?Math.max(0,uso[v]+1-cap):0;
     const hits=new Int8Array(D); for(const v of line) for(const d of byNum[v]) hits[d]++;
     let score=0; for(let d=0;d<D;d++) score+=g[hits[d]];
     const Pm=prev.map(l=>{const m=new Uint8Array(NV);l.forEach(v=>m[v]=1);return m});
     const ov=Pm.map(m=>line.reduce((s,v)=>s+m[v],0)), PEN=4;
     let exc=ov.reduce((s,o)=>s+Math.max(0,o-lim),0); score-=PEN*exc;
+    let excR=0; for(const v of line) excR+=repx(v); score-=PENR*excR;
     let best=exc?-Infinity:score, bestLine=line.slice();
     const T0=1.5,T1=0.01;
     for(let it=0;it<iters;it++){
       const T=T0*Math.pow(T1/T0,it/iters);
-      const pi=rnd(X),a=line[pi]; let b; do{b=sorteia()}while(inL[b]);
+      const pi=rnd(X),a=line[pi]; let b=-1;
+      for(let t=0;t<30;t++){const c=sorteia();if(!inL[c]&&cabe(c,a)){b=c;break}}
+      if(b<0) continue;
       let delta=0;
       for(const d of byNum[a]){delta+=g[hits[d]-1]-g[hits[d]];hits[d]--}
       for(const d of byNum[b]){delta+=g[hits[d]+1]-g[hits[d]];hits[d]++}
       let de=0; for(let j=0;j<Pm.length;j++){const o=ov[j],n=o-Pm[j][a]+Pm[j][b];de+=Math.max(0,n-lim)-Math.max(0,o-lim)}
       delta-=PEN*de;
+      const dR=repx(b)-repx(a); delta-=PENR*dR;
       if(delta>=0||Math.random()<Math.exp(delta/T)){
-        line[pi]=b;inL[a]=0;inL[b]=1;score+=delta;exc+=de;
+        line[pi]=b;inL[a]=0;inL[b]=1;score+=delta;exc+=de;excR+=dR;pares+=(b%2===0?1:0)-(a%2===0?1:0);
         for(let j=0;j<Pm.length;j++) ov[j]+=Pm[j][b]-Pm[j][a];
         if(exc===0&&score>best+1e-9){best=score;bestLine=line.slice()}
       }else{for(const d of byNum[b]) hits[d]--; for(const d of byNum[a]) hits[d]++}
@@ -18095,6 +18149,13 @@ function criarAba(C){
     if(!(n>=1&&n<=50)){erro('Linhas precisa ser um número entre 1 e 50.');return}
     if(!(t>=0&&t<=S.draws.length-300)){erro(`Concursos de teste precisa ficar entre 0 e ${fmtN(S.draws.length-300)}.`);return}
     if(lim<2*X-C.U){erro(`Com ${X} números por linha, duas linhas sempre têm pelo menos ${2*X-C.U} dezenas em comum. Escolha um limite maior.`);return}
+    const F=C.filtros?{maxRun:liga('FSeq')?1:(liga('FSeqMax')?C.seqMax:99),pares:tem('par')?paresPermitidos(X):null,todos:liga('FTodos'),cap:liga('FRep')?Math.ceil(n*X/C.U):0}:{};
+    if(tem('par')){
+      const fixos=(C.paresFixos||[]).filter(q=>liga('FP'+q));
+      if(fixos.length&&X!==C.X.min){erro(`Os filtros de ${fixos.map(q=>`${q} pares`).join(' e ')} valem para linhas de ${C.X.min} números. Mude "Números por linha" para ${C.X.min} ou desligue esses filtros.`);return}
+      if(F.pares&&!F.pares.length){erro('Os filtros de pares e ímpares ligados se contradizem (nenhuma linha atende a todos). Deixe ligado só um deles.');return}
+    }
+    if(F.todos&&n*X<C.U){erro(`Para incluir todas as dezenas de ${p2(C.base)} a ${p2(C.base+C.U-1)}, linhas × números precisa dar pelo menos ${C.U}. Com ${X} números por linha, use pelo menos ${Math.ceil(C.U/X)} linhas.`);return}
     E('Err').hidden=true; travar(true); E('Rel').hidden=true; E('Prog').hidden=false;
     const P=pesos(meta), prof=E('Busca').value==='prof';
     const iters=prof?C.iters[1]:C.iters[0], restarts=prof?4:2;
@@ -18112,26 +18173,198 @@ function criarAba(C){
         E('ProgTxt').textContent=(rodadas>1?`Rodada ${r+1} de ${rodadas}${melhor?` (melhor até agora: ${fmtN(melhor.v)})`:''} · `:'')+`Otimizando linha ${i+1} de ${n} sobre ${fmtN(D)} concursos…`+(seg!==null&&(prof||rodadas>1)?` · cerca de ${seg<60?seg+' s':Math.ceil(seg/60)+' min'} restantes`:'');
         E('ProgBar').style.width=`${(e/total*100).toFixed(1)}%`;
         await tick();
-        let m=null; for(let k=0;k<restarts;k++){const res=otimizarLinha(treino,B,X,iters,lines,lim,P);if(!m||res.score>m.score)m=res}
+        let m=null; for(let k=0;k<restarts;k++){const res=otimizarLinha(treino,B,X,iters,lines,lim,P,F);if(!m||res.score>m.score)m=res}
         lines.push(m.line);
       }
       if(rodadas>1){
         lines.forEach(l=>{const c=l.join(',');if(!banco.has(c))banco.set(c,{l,s:pontos(l)})});
-        const ord=[...banco.values()].sort((a,b)=>b.s-a.s), sel=[];
-        for(const c of ord){if(sel.length>=n)break;if(sel.every(o=>o.l.filter(v=>c.l.includes(v)).length<=lim))sel.push(c)}
+        const ord=[...banco.values()].sort((a,b)=>b.s-a.s), sel=[], u=new Uint16Array(NV+1);
+        for(const c of ord){if(sel.length>=n)break;if(F.cap&&c.l.some(v=>u[v]>=F.cap))continue;if(sel.every(o=>o.l.filter(v=>c.l.includes(v)).length<=lim)){sel.push(c);c.l.forEach(v=>u[v]++)}}
         for(const c of ord){if(sel.length>=n)break;if(!sel.includes(c))sel.push(c)}
         const ls=sel.map(c=>c.l), v=premios(ls);
         if(!melhor||v>=melhor.v) melhor={ls,v};
       }
     }
     if(rodadas>1) lines=melhor.ls;
-    S.lines=lines; S.cfg={n,t,lim,meta,P,X};
+    let aj=null;
+    if(F.todos||F.cap){aj=ajustar(lines,treino,B,P,X,lim,F);lines=aj.lines}
+    S.lines=lines; S.cfg={n,t,lim,meta,P,...F,X,cliques:0};
     const tot=contagem(lines,treino), soma=tot.reduce((s,v,h)=>s+(premio(h,P)?v:0),0);
     render(null);
     E('Info').textContent=`${n} linhas de ${X} · ${fmtN(soma)} prêmios somados nos ${fmtN(D)} concursos de otimização · `+
-      C.faixas.map(h=>`${h}: ${fmtN(tot[h])}`).join(', ')+(rodadas>1?` · melhores de ${rodadas} rodadas (${fmtN(banco.size)} linhas avaliadas)`:'');
+      faixasDe(P).map(h=>`${h}: ${fmtN(tot[h])}`).join(', ')+filtrosTxt(lines,F,aj)+(rodadas>1?` · melhores de ${rodadas} rodadas (${fmtN(banco.size)} linhas avaliadas)`:'');
     E('Prog').hidden=true; E('Toast').textContent='';
     travar(false);
+  }
+  // quantidades de pares permitidas pelos filtros ligados (interseção); null = qualquer
+  function paresPermitidos(X){
+    let ok=null; const inter=a=>{ok=ok?ok.filter(v=>a.includes(v)):a};
+    if(liga('FPar')) inter(Array.from({length:X+1},(_,q)=>q).filter(q=>Math.abs(2*q-X)<=1));
+    for(const q of C.paresFixos||[]) if(liga('FP'+q)) inter([q]);
+    return ok;
+  }
+  function filtrosTxt(lines,F,aj){
+    if(!C.filtros) return '';
+    const u=new Uint16Array(NV+1); lines.forEach(l=>l.forEach(v=>u[v]++));
+    let acima=0,dist=0; for(let v=C.base;v<C.base+C.U;v++){ if(u[v]) dist++; if(F.cap&&u[v]>F.cap) acima++ }
+    const t=[F.maxRun===1?'sem sequências':(F.maxRun<99&&`no máximo ${F.maxRun} seguidos`),F.pares&&(F.pares.length===1?`${F.pares[0]} pares e ${lines[0].length-F.pares[0]} ímpar${lines[0].length-F.pares[0]===1?'':'es'}`:'par/ímpar equilibrado'),
+      F.cap&&(acima?`${acima} dezena${acima>1?'s':''} acima de ${F.cap}×`:`cada dezena no máximo ${F.cap}×`),
+      F.todos&&(dist<C.U?`faltaram ${C.U-dist} dezenas`:`todas as ${C.U} dezenas presentes`)].filter(Boolean);
+    return t.length?` · filtros: ${t.join(', ')}`:'';
+  }
+  // incluir todas as dezenas e/ou limitar repetição: troca dezenas com o menor custo, respeitando os filtros
+  function ajustar(lines,treino,byNum,P,X,lim,F){
+    const D=treino.length, g=P.g, hi=C.base+C.U-1, cap=F.cap||0;
+    const L=lines.map(l=>l.slice()), cnt=new Int16Array(NV+1); L.forEach(l=>l.forEach(v=>cnt[v]++));
+    const inL=L.map(l=>{const m=new Uint8Array(NV+1);l.forEach(v=>m[v]=1);return m});
+    const hits=L.map(l=>{const h=new Int8Array(D);for(const v of l)for(const d of byNum[v])h[d]++;return h});
+    const pode=(i,a,b,comLim)=>{
+      const m=inL[i]; if(m[b]) return false;
+      if(cap&&cnt[b]>=cap) return false;
+      if(F.maxRun<99){let lo=0;for(let w=b-1;w>=C.base&&m[w]&&w!==a;w--)lo++;let up=0;for(let w=b+1;w<=hi&&m[w]&&w!==a;w++)up++;if(lo+up+1>F.maxRun) return false}
+      if(F.pares){const q=L[i].reduce((s,v)=>s+(v%2===0),0)-(a%2===0)+(b%2===0);if(!F.pares.includes(q)) return false}
+      if(comLim) for(let j=0;j<L.length;j++){if(j===i)continue;let o=0;for(const v of L[i]) o+=inL[j][v];o+=inL[j][b]-inL[j][a];if(o>lim) return false}
+      return true;
+    };
+    const ganho=(i,a,b)=>{const h=hits[i];let dl=0;
+      for(const d of byNum[a]){dl+=g[h[d]-1]-g[h[d]];h[d]--}
+      for(const d of byNum[b]){dl+=g[h[d]+1]-g[h[d]];h[d]++}
+      for(const d of byNum[b]) h[d]--; for(const d of byNum[a]) h[d]++;
+      return dl};
+    const trocar=(i,a,b)=>{L[i][L[i].indexOf(a)]=b;inL[i][a]=0;inL[i][b]=1;cnt[a]--;cnt[b]++;
+      for(const d of byNum[a]) hits[i][d]--; for(const d of byNum[b]) hits[i][d]++};
+    let trocas=0;
+    if(cap) for(let v=C.base;v<=hi;v++){
+      while(cnt[v]>cap){
+        let melhor=null;
+        for(const comLim of [true,false]){
+          for(let i=0;i<L.length;i++){ if(!inL[i][v]) continue;
+            for(let b=C.base;b<=hi;b++){ if(!pode(i,v,b,comLim)) continue;
+              const dl=ganho(i,v,b)+(cnt[b]===0?100:0); if(!melhor||dl>melhor.dl) melhor={i,b,dl}}}
+          if(melhor) break;
+        }
+        if(!melhor) break; trocar(melhor.i,v,melhor.b); trocas++;
+      }
+    }
+    if(F.todos) for(let m=C.base;m<=hi;m++){
+      if(cnt[m]) continue;
+      let melhor=null;
+      for(const comLim of [true,false]){
+        for(let i=0;i<L.length;i++) for(const a of L[i]){
+          if(cnt[a]<2||!pode(i,a,m,comLim)) continue;
+          const dl=ganho(i,a,m); if(!melhor||dl>melhor.dl) melhor={i,a,dl};
+        }
+        if(melhor) break;
+      }
+      if(melhor){trocar(melhor.i,melhor.a,m);trocas++}
+    }
+    for(let passe=0;passe<3;passe++){
+      let mudou=false;
+      for(let i=0;i<L.length;i++){
+        let melhor=null;
+        for(const a of L[i]){ if(F.todos&&cnt[a]<2) continue;
+          for(let b=C.base;b<=hi;b++){ if(!pode(i,a,b,true)) continue;
+            const dl=ganho(i,a,b); if(dl>1e-9&&(!melhor||dl>melhor.dl)) melhor={a,b,dl}}}
+        if(melhor){trocar(i,melhor.a,melhor.b);mudou=true}
+      }
+      if(!mudou) break;
+    }
+    return {lines:L.map(l=>l.sort((x,y)=>x-y)),trocas};
+  }
+  // OTIMIZAR: mantém as dezenas boas e troca as 3 de menor contribuição pela melhor combinação (busca exata),
+  // sem repetir dezenas entre as linhas além do necessário
+  async function otimizar(){
+    if(S.busy||!S.lines.length||!S.cfg) return;
+    const G=S.cfg, P=G.P, {treino}=split(G.t), D=treino.length, X=G.X, hi=C.base+C.U-1;
+    const g=new Float64Array(C.K+5); for(let h=0;h<C.K+5;h++) g[h]=premio(Math.min(h,C.K),P)?P.g[Math.min(h,C.K)]:0;
+    const byNum=Array.from({length:NV+1},()=>[]); treino.forEach((d,i)=>d.n.forEach(v=>byNum[v].push(i)));
+    const premiosDe=ls=>contagem(ls,treino).reduce((s,v,h)=>s+(premio(h,P)?v:0),0);
+    const antes=premiosDe(S.lines);
+    G.cap=G.cap||Math.ceil(S.lines.length*X/C.U);
+    const usoA=new Int16Array(NV+1); S.lines.forEach(l=>l.forEach(v=>usoA[v]++));
+    let excA=0; for(let v=C.base;v<=hi;v++) excA+=Math.max(0,usoA[v]-G.cap);
+    let base=S.lines;
+    if(excA){
+      travar(true); E('Prog').hidden=false;
+      const n=S.lines.length, et=2*n, B=byNum.map(a=>Int32Array.from(a));
+      const melhorLinha=prev=>{let m=null;for(let r=0;r<2;r++){const res=otimizarLinha(treino,B,X,C.iters[0],prev,G.lim,P,G);if(!m||res.score>m.score)m=res}return m.line};
+      const pts=l=>premiosDe([l]);
+      base=[];
+      for(let i=0;i<n;i++){E('ProgTxt').textContent=`Removendo repetições: montando linha ${i+1} de ${n}…`;E('ProgBar').style.width=`${(i/et*100).toFixed(1)}%`;await tick();base.push(melhorLinha(base))}
+      for(let i=0;i<n;i++){E('ProgTxt').textContent=`Removendo repetições: refinando linha ${i+1} de ${n}…`;E('ProgBar').style.width=`${((n+i)/et*100).toFixed(1)}%`;await tick();
+        const outras=base.filter((_,j)=>j!==i), nova=melhorLinha(outras), u=new Int16Array(NV+1); outras.forEach(l=>l.forEach(v=>u[v]++));
+        if(nova.every(v=>u[v]<G.cap)&&pts(nova)>=pts(base[i])) base[i]=nova}
+      base=ajustar(base,treino,B,P,X,G.lim,G).lines;
+      E('Prog').hidden=true; travar(false);
+    }
+    const L=base.map(l=>l.slice()), cnt=new Int16Array(NV+1); L.forEach(l=>l.forEach(v=>cnt[v]++));
+    const inL=L.map(l=>{const m=new Uint8Array(NV+1);l.forEach(v=>m[v]=1);return m});
+    const hits=L.map(l=>{const h=new Int8Array(D);for(const v of l)for(const d of byNum[v])h[d]++;return h});
+    const contrib=(i,a)=>{const h=hits[i];let c=0;for(const d of byNum[a]) c+=g[h[d]]-g[h[d]-1];return c};
+    const N1=NV+1, PP=new Float64Array(N1*N1), TT=new Float64Array(N1*N1*N1), toc=[];
+    let trocas=0, mudadas=0;
+    for(let i=0;i<L.length;i++){
+      const remov=L[i].filter(a=>!(G.todos&&cnt[a]<2));
+      const r=Math.min(3,remov.length); if(r<1) continue;
+      const R=remov.map(a=>({a,c:contrib(i,a)})).sort((x,y)=>x.c-y.c).slice(0,r).map(o=>o.a);
+      const fixos=L[i].filter(v=>!R.includes(v)), fx=new Uint8Array(N1+1); fixos.forEach(v=>fx[v]=1);
+      const h=hits[i]; for(const a of R) for(const d of byNum[a]) h[d]--;
+      const Sg=new Float64Array(N1);
+      for(let v=C.base;v<=hi;v++){ if(fx[v]) continue; let c=0; for(const d of byNum[v]) c+=g[h[d]+1]-g[h[d]]; Sg[v]=c }
+      for(const t of toc){PP[t[0]]=0; if(t[1]>=0) TT[t[1]]=0} toc.length=0;
+      for(let d=0;d<D;d++){
+        const hd=h[d], e2=g[hd+2]-2*g[hd+1]+g[hd], e3=g[hd+3]-3*g[hd+2]+3*g[hd+1]-g[hd];
+        if(e2===0&&e3===0) continue;
+        const nn=treino[d].n;
+        for(let a=0;a<nn.length;a++){ if(fx[nn[a]]) continue;
+          for(let b=a+1;b<nn.length;b++){ if(fx[nn[b]]) continue;
+            const ip=nn[a]*N1+nn[b]; if(e2){PP[ip]+=e2; toc.push([ip,-1])}
+            if(r>=3&&e3) for(let w=b+1;w<nn.length;w++){ if(fx[nn[w]]) continue; const it=ip*N1+nn[w]; TT[it]+=e3; toc.push([ip,it]) }
+          }}
+      }
+      const parFix=fixos.reduce((s2,v)=>s2+(v%2===0),0);
+      const ovFix=L.map((l,j)=>j===i?0:fixos.reduce((s2,v)=>s2+inL[j][v],0));
+      const cntSem=v=>cnt[v]-(R.includes(v)?1:0);
+      const cand=[]; for(let v=C.base;v<=hi;v++){
+        if(fx[v]) continue;
+        if(G.maxRun===1&&((v>C.base&&fx[v-1])||(v<hi&&fx[v+1]))) continue;
+        if(cntSem(v)>=G.cap) continue;
+        cand.push(v);
+      }
+      const ok=arr=>{
+        if(G.maxRun<99){const st=fixos.concat(arr).sort((x,y)=>x-y);let run=1;for(let q=1;q<st.length;q++){run=st[q]-st[q-1]===1?run+1:1;if(run>G.maxRun) return false}}
+        if(G.pares){const q=parFix+arr.reduce((s2,v)=>s2+(v%2===0),0); if(!G.pares.includes(q)) return false}
+        for(let j=0;j<L.length;j++){ if(j===i) continue; let o=ovFix[j]; for(const v of arr) o+=inL[j][v]; if(o>G.lim) return false }
+        return true;
+      };
+      const valor=arr=>{let s2=0; for(const v of arr) s2+=Sg[v];
+        for(let u=0;u<arr.length;u++) for(let w=u+1;w<arr.length;w++){ s2+=PP[arr[u]*N1+arr[w]];
+          for(let z=w+1;z<arr.length;z++) s2+=TT[(arr[u]*N1+arr[w])*N1+arr[z]] }
+        return s2};
+      const atual=R.slice().sort((x,y)=>x-y), vA=valor(atual);
+      let melhor=null; const nc=cand.length;
+      if(r===3){ for(let u=0;u<nc;u++) for(let w=u+1;w<nc;w++) for(let z=w+1;z<nc;z++){ const arr=[cand[u],cand[w],cand[z]], v=valor(arr); if(v>vA+1e-9&&(!melhor||v>melhor.v)&&ok(arr)) melhor={arr,v} } }
+      else if(r===2){ for(let u=0;u<nc;u++) for(let w=u+1;w<nc;w++){ const arr=[cand[u],cand[w]], v=valor(arr); if(v>vA+1e-9&&(!melhor||v>melhor.v)&&ok(arr)) melhor={arr,v} } }
+      else { for(const c of cand){ const v=valor([c]); if(v>vA+1e-9&&(!melhor||v>melhor.v)&&ok([c])) melhor={arr:[c],v} } }
+      const novas=melhor?melhor.arr:atual;
+      for(const b of novas) for(const d of byNum[b]) h[d]++;
+      if(melhor){
+        const sai=R.filter(a=>!novas.includes(a)), entra=novas.filter(b=>!R.includes(b));
+        sai.forEach(a=>{inL[i][a]=0;cnt[a]--}); entra.forEach(b=>{inL[i][b]=1;cnt[b]++});
+        L[i]=fixos.concat(novas).sort((x,y)=>x-y); trocas+=entra.length; mudadas++;
+      }
+    }
+    G.cliques++;
+    S.lines=L; render(null);
+    const depois=premiosDe(L), tot=contagem(L,treino);
+    let excD=0; for(let v=C.base;v<=hi;v++) excD+=Math.max(0,cnt[v]-G.cap);
+    E('Info').textContent=`${L.length} linhas de ${X} · ${fmtN(depois)} prêmios somados nos ${fmtN(D)} concursos de otimização · `+
+      faixasDe(P).map(h=>`${h}: ${fmtN(tot[h])}`).join(', ')+filtrosTxt(L,G,null)+` · OTIMIZAR ${G.cliques}×`;
+    const repTxt=excA?`${excA-excD} repetiç${excA-excD===1?'ão eliminada':'ões eliminadas'}. `:'';
+    E('Toast').textContent=repTxt+(trocas
+      ?`${trocas} dezena${trocas>1?'s':''} trocada${trocas>1?'s':''} em ${mudadas} linha${mudadas>1?'s':''} · ${fmtN(antes)} → ${fmtN(depois)} (${depois>=antes?'+':''}${fmtN(depois-antes)}). Clique de novo para continuar.`
+      :(excA?`${fmtN(antes)} → ${fmtN(depois)}. Clique de novo para continuar.`:'Nenhuma troca melhorou: as dezenas de cada linha já são as melhores para os filtros escolhidos. Use GERAR ou GERAR 10× para partir de outras linhas.'));
+    if(!E('Rel').hidden) verificar();
   }
   function render(stats){
     E('Out').innerHTML=S.lines.map((l,i)=>{
@@ -18158,13 +18391,13 @@ function criarAba(C){
   function bloco(R,rotulo,classe,completo){
     const P=S.cfg.P, X=S.cfg.X, total=S.lines.length*R.D, CC=comb(C.U,C.K);
     const esp=h=>comb(X,h)*comb(C.U-X,C.K-h)/CC*total;
-    const fx=C.faixas;
-    const obsP=fx.filter(h=>premio(h,P)).reduce((s,h)=>s+R.dist[h],0), espP=fx.filter(h=>premio(h,P)).reduce((s,h)=>s+esp(h),0);
+    const fx=faixasDe(P), todasH=Array.from({length:C.K+1},(_,h)=>h);
+    const obsP=todasH.filter(h=>premio(h,P)).reduce((s,h)=>s+R.dist[h],0), espP=todasH.filter(h=>premio(h,P)).reduce((s,h)=>s+esp(h),0);
     const r=espP>0?obsP/espP:0, mediaEsp=X*C.K/C.U;
     const maxDist=Math.max(...R.dist,...Array.from({length:C.K+1},(_,h)=>esp(h)));
     const rows=Array.from({length:C.K+1},(_,h)=>C.K-h).filter(h=>esp(h)>=0.005||R.dist[h]>0||fx.includes(h)).map(h=>{
       const e=esp(h),o=R.dist[h],q=e>0?o/e:0, cls=e<0.5?'':(q>=1.1?'up':(q<=0.9?'down':''));
-      return `<tr><td>${h} acerto${h===1?'':'s'}${fx.includes(h)?' <span class="pill">prêmio</span>':''}</td><td>${fmtN(o)}</td><td>${e<10?fmtD(e,2):fmtN(Math.round(e))}</td><td class="ratio ${cls}">${e>0?fmtD(q,2):'–'}</td>
+      return `<tr><td>${h} acerto${h===1?'':'s'}${C.faixas.includes(h)?' <span class="pill">prêmio</span>':''}</td><td>${fmtN(o)}</td><td>${e<10?fmtD(e,2):fmtN(Math.round(e))}</td><td class="ratio ${cls}">${e>0?fmtD(q,2):'–'}</td>
         <td class="barc"><div class="barw"><span style="width:${(Math.sqrt(o/maxDist)*100).toFixed(1)}%"></span><i style="left:${(Math.sqrt(e/maxDist)*100).toFixed(1)}%"></i></div></td></tr>`;
     }).join('');
     const rank=R.lines.map((s,i)=>({i,...s})).sort((a,b)=>b.premios-a.premios||b.max-a.max);
@@ -18205,6 +18438,7 @@ function criarAba(C){
   E('Form').addEventListener('submit',e=>{e.preventDefault();gerar(1)});
   E('Gerar10').addEventListener('click',()=>gerar(10));
   E('Verificar').addEventListener('click',verificar);
+  if(tem('otimizar')) E('Otimizar').addEventListener('click',otimizar);
   E('Busca').addEventListener('change',()=>{E('BuscaHint').textContent=E('Busca').value==='prof'?'~1 min':'poucos segundos'});
   E('Copy').addEventListener('click',()=>{
     const txt=S.lines.map(l=>l.map(p2).join(' ')).join('\n');
@@ -18220,13 +18454,13 @@ criarAba({p:'lm',nome:'Lotomania',arquivo:'lotomania.csv',embed:'dadosLM',U:100,
   faixas:[20,19,18,17,16,15,0],lims:[30,35,40,45],limDef:35,iters:[8000,30000],url:'valorfinal.com.br/dados/loterias/lotomania.csv'});
 criarAba({p:'lf',nome:'Lotofácil',arquivo:'lotofacil.csv',embed:'dadosLF',U:25,base:1,K:15,X:{min:15,max:20,def:15},cols:5,linhasDef:10,
   desc:'Lotofácil: 15 dezenas sorteadas entre 01 e 25, cada aposta marca de 15 a 20. Prêmios para 15, 14, 13, 12 e 11 acertos. As linhas são otimizadas para somar o máximo de prêmios nos concursos da amostragem.',
-  metas:[{v:'11',t:'11+ acertos'},{v:'12',t:'12+ acertos'},{v:'13',t:'13+ acertos',def:1},{v:'14',t:'14+ acertos'}],metaMaxK:11,zero:false,
-  faixas:[15,14,13,12,11],lims:[9,10,11,12,13],limDef:11,iters:[6000,25000],url:'valorfinal.com.br/dados/loterias/lotofacil.csv'});
+  metas:[{v:'11',t:'11+ acertos'},{v:'12',t:'12+ acertos'},{v:'13',t:'13+ acertos',def:1},{v:'14',t:'14+ acertos'}],metaMaxK:11,zero:false,filtros:['seqMax'],seqMax:5,
+  faixas:[15,14,13,12,11],lims:[9,10,11,12,13,14,15,16,17],limDef:11,iters:[6000,25000],url:'valorfinal.com.br/dados/loterias/lotofacil.csv'});
 $('tab-loto').addEventListener('click',()=>setModo('loto'));
 $('tab-lf').addEventListener('click',()=>setModo('lf'));
 criarAba({p:'qn',nome:'Quina',arquivo:'quina.csv',embed:'dadosQN',U:80,base:1,K:5,X:{min:5,max:15,def:5},cols:10,linhasDef:20,
   desc:'Quina: 5 dezenas sorteadas entre 01 e 80, cada aposta marca de 5 a 15. Prêmios para 5, 4, 3 e 2 acertos. As linhas são otimizadas para somar o máximo de prêmios nos concursos da amostragem.',
-  metas:[{v:'2',t:'Duque (2+)'},{v:'3',t:'Terno (3+)',def:1},{v:'4',t:'Quadra (4+)'},{v:'5',t:'Quina (5)'}],metaMaxK:2,zero:false,
+  metas:[{v:'0',t:'Zero (0 acertos)'},{v:'1',t:'1 acerto (1+)'},{v:'2',t:'Duque (2+)'},{v:'3',t:'Terno (3+)',def:1},{v:'4',t:'Quadra (4+)'},{v:'5',t:'Quina (5)'}],metaMaxK:2,zero:false,filtros:['seq','par','todos','rep','otimizar'],paresFixos:[4,3],
   faixas:[5,4,3,2],lims:[1,2,3,4,6,8,10],limDef:2,iters:[8000,30000],url:'valorfinal.com.br/dados/loterias/quina.csv'});
 $('tab-qn').addEventListener('click',()=>setModo('qn'));
 
