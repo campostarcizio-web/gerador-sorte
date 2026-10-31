@@ -260,6 +260,7 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
       <button type="button" id="copy">Copiar</button>
       <button type="submit" class="primary" id="gerar">GERAR SEQUÊNCIA</button>
       <button type="button" class="primary alt" id="gerar10" title="Gera 10 vezes e mantém as linhas mais eficientes de todas as rodadas">GERAR 10× (MELHORES)</button>
+      <button type="button" class="primary alt" id="otimizar" title="Troca só as dezenas que menos contribuem em cada linha, mantendo as boas">OTIMIZAR</button>
       <button type="button" class="verify" id="verificar">VERIFICAR</button>
     </div>
     <span class="err" id="err" hidden></span>
@@ -3361,7 +3362,9 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
 3074;2026-10-24;2 3 20 25 39 57
 3075;2026-10-26;7 10 14 27 36 55
 3076;2026-10-27;6 30 32 38 49 57
-3077;2026-10-28;2 14 18 31 35 40</script>
+3077;2026-10-28;2 14 18 31 35 40
+3078;2026-10-29;5 7 12 29 34 36
+3079;2026-10-30;5 9 16 40 41 59</script>
 <script type="text/plain" id="dadosLM">concurso;data;dezenas
 1;1999-10-02;0 6 11 14 16 21 22 25 32 33 34 46 61 70 73 78 88 89 90 95
 2;1999-10-09;8 11 14 17 18 24 29 37 44 49 51 55 62 63 64 76 82 84 93 97
@@ -17439,7 +17442,7 @@ function setModo(m){
     $('tab-'+k).setAttribute('aria-selected',String(k===m));
     $('campos-'+k).hidden=k!==m; $('desc-'+k).hidden=k!==m;
   }
-  $('gerar10').hidden=m!=='otim';
+  $('gerar10').hidden=m!=='otim'; $('otimizar').hidden=m!=='otim';
   $('megaSec').hidden=['loto','lf','qn'].includes(m); $('lmSec').hidden=m!=='loto'; $('lfSec').hidden=m!=='lf'; $('qnSec').hidden=m!=='qn';
   $('tab-loto').setAttribute('aria-selected',String(m==='loto')); $('tab-lf').setAttribute('aria-selected',String(m==='lf')); $('tab-qn').setAttribute('aria-selected',String(m==='qn'));
   $('err').hidden=true;
@@ -17722,7 +17725,7 @@ async function gerarOtim(rodadas=1){
     for(const l of lines){const has=new Uint8Array(61);l.forEach(v=>has[v]=1);treino.forEach((d,j)=>{let h=0;for(const v of d.n)h+=has[v];if(naMeta(h,k))covered[j]=1})}
   }
   $('progBar').style.width='100%';
-  current=lines; cfg={mode:'otim',x,n,k,t,soma};
+  current=lines; cfg={mode:'otim',x,n,k,t,soma,eq,semSeq,parImpar,lim,cap,todos,cliques:0};
   const cob=covered.reduce((s,v)=>s+v,0);
   const out=$('out');out.classList.remove('fresh');void out.offsetWidth;out.classList.add('fresh');
   render(null);
@@ -17740,7 +17743,134 @@ async function gerarOtim(rodadas=1){
   $('prog').hidden=true; $('toast').textContent='';
   travar(false);
 }
-function travar(on){busy=on;['gerar','gerar10','verificar'].forEach(id=>$(id).disabled=on)}
+function travar(on){busy=on;['gerar','gerar10','verificar','otimizar'].forEach(id=>$(id).disabled=on)}
+
+/* ---------- OTIMIZAR: troca só as dezenas ruins ----------
+   Em cada linha, mede quanto cada dezena contribui para a pontuação no histórico de otimização.
+   As 3 de menor contribuição saem e o gerador testa TODAS as combinações de 3 dezenas para
+   o lugar delas (busca exata), respeitando os filtros usados na geração. As outras dezenas
+   ficam. Só aplica a troca se a linha melhorar; a cada clique as "ruins" são medidas de novo. */
+async function otimizarRuins(){
+  if(busy||!current.length||!cfg||cfg.mode!=='otim') return;
+  const C=cfg, {treino}=split(C.t), D=treino.length, x=C.x, k=C.k;
+  const g=new Float64Array(12);
+  // só faixas premiadas contam: uma troca só acontece se aumentar os acertos na meta
+  for(let h=0;h<12;h++) g[h]=k===0?(h===0?1:0):(h>=k?(C.eq?1:1+0.25*(Math.min(h,6)-k)):0);
+  const byNum=Array.from({length:61},()=>[]); treino.forEach((d,i)=>d.n.forEach(v=>byNum[v].push(i)));
+  const premiosDe=ls=>{let p=0;for(const l of ls){const m=new Uint8Array(61);l.forEach(v=>m[v]=1);for(const d of treino){let c=0;for(const v of d.n)c+=m[v];if(naMeta(c,k))p++}}return p};
+  const antes=premiosDe(current);
+  // OTIMIZAR nunca repete dezenas além do necessário: cada dezena no máximo ceil(linhas × números / 60) vezes
+  C.cap=C.cap||Math.ceil(current.length*x/60);
+  const usoAntes=new Int16Array(62); current.forEach(l=>l.forEach(v=>usoAntes[v]++));
+  let excessoAntes=0; for(let v=1;v<=60;v++) excessoAntes+=Math.max(0,usoAntes[v]-C.cap);
+  let base=current;
+  if(excessoAntes){
+    // as linhas repetem dezenas: remonta o conjunto linha a linha já com o limite de repetição
+    // (cada linha vê as anteriores), refina cada linha vendo as outras e corrige o que sobrar
+    travar(true); $('prog').hidden=false;
+    const zero=new Uint8Array(D), n=current.length, etapas=2*n;
+    const pts=l=>{const m=new Uint8Array(61);l.forEach(v=>m[v]=1);let p=0;for(const d of treino){let c=0;for(const v of d.n)c+=m[v];if(naMeta(c,k))p++}return p};
+    const melhorLinha=prev=>{let m=null;for(let r=0;r<2;r++){const res=otimizarLinha(treino,byNum,zero,x,k,12000,prev,C.lim,1.5,C.eq,C.semSeq,C.parImpar,C.cap);if(!m||res.score>m.score)m=res}return m.line};
+    base=[];
+    for(let i=0;i<n;i++){
+      $('progTxt').textContent=`Removendo repetições: montando linha ${i+1} de ${n}…`;
+      $('progBar').style.width=`${(i/etapas*100).toFixed(1)}%`; await tick();
+      base.push(melhorLinha(base));
+    }
+    for(let i=0;i<n;i++){
+      $('progTxt').textContent=`Removendo repetições: refinando linha ${i+1} de ${n}…`;
+      $('progBar').style.width=`${((n+i)/etapas*100).toFixed(1)}%`; await tick();
+      const outras=base.filter((_,j)=>j!==i), nova=melhorLinha(outras);
+      const u=new Int16Array(62); outras.forEach(l=>l.forEach(v=>u[v]++));
+      if(nova.every(v=>u[v]<C.cap)&&pts(nova)>=pts(base[i])) base[i]=nova;
+    }
+    base=garantirTodos(base,treino,byNum,k,C.eq,x,C.semSeq,C.parImpar,C.lim,C.cap,C.todos).lines;
+    $('prog').hidden=true; travar(false);
+  }
+  const L=base.map(l=>l.slice()), cnt=new Int16Array(62); L.forEach(l=>l.forEach(v=>cnt[v]++));
+  const inL=L.map(l=>{const m=new Uint8Array(62);l.forEach(v=>m[v]=1);return m});
+  const hits=L.map(l=>{const h=new Int8Array(D);for(const v of l)for(const d of byNum[v])h[d]++;return h});
+  const premios=()=>{let p=0;for(const h of hits)for(let d=0;d<D;d++) if(naMeta(h[d],k)) p++;return p};
+  const contrib=(i,a)=>{const h=hits[i];let c=0;for(const d of byNum[a]) c+=g[h[d]]-g[h[d]-1];return c};
+  const P=new Float64Array(61*61), T=new Float64Array(61*61*61), tocados=[];
+  let trocas=0, linhasMudadas=0;
+  for(let i=0;i<L.length;i++){
+    // dezenas que podem sair (com "incluir todos", não sai a única ocorrência de uma dezena)
+    const removiveis=L[i].filter(a=>!(C.todos&&cnt[a]<2));
+    const r=Math.min(3,removiveis.length); if(r<1) continue;
+    const R=removiveis.map(a=>({a,c:contrib(i,a)})).sort((p,q)=>p.c-q.c).slice(0,r).map(o=>o.a);
+    const fixos=L[i].filter(v=>!R.includes(v)), fx=new Uint8Array(62); fixos.forEach(v=>fx[v]=1);
+    const h=hits[i]; for(const a of R) for(const d of byNum[a]) h[d]--;   // h = acertos só com as fixas
+    // ganho individual, de pares e de trios (para somar exatamente o efeito de 3 dezenas novas)
+    const S=new Float64Array(61);
+    for(let v=1;v<=60;v++){ if(fx[v]) continue; let c=0; for(const d of byNum[v]) c+=g[h[d]+1]-g[h[d]]; S[v]=c }
+    for(const t of tocados){P[t[0]]=0; if(t[1]>=0) T[t[1]]=0} tocados.length=0;
+    for(let d=0;d<D;d++){
+      const hd=h[d], e2=g[hd+2]-2*g[hd+1]+g[hd], e3=g[hd+3]-3*g[hd+2]+3*g[hd+1]-g[hd];
+      if(e2===0&&e3===0) continue;
+      const n=treino[d].n;
+      for(let p=0;p<6;p++){ if(fx[n[p]]) continue;
+        for(let q=p+1;q<6;q++){ if(fx[n[q]]) continue;
+          const ip=n[p]*61+n[q]; if(e2){P[ip]+=e2; tocados.push([ip,-1])}
+          if(r>=3&&e3) for(let w=q+1;w<6;w++){ if(fx[n[w]]) continue; const it=(n[p]*61+n[q])*61+n[w]; T[it]+=e3; tocados.push([ip,it]) }
+        }}
+    }
+    // filtros
+    const parFix=fixos.reduce((s,v)=>s+(v%2===0),0);
+    const ovFix=L.map((l,j)=>j===i?0:fixos.reduce((s,v)=>s+inL[j][v],0));
+    const cntSem=v=>cnt[v]-(R.includes(v)?1:0);
+    const cand=[]; for(let v=1;v<=60;v++){
+      if(fx[v]) continue;
+      if(C.semSeq&&(fx[v-1]||fx[v+1])) continue;
+      if(C.cap&&cntSem(v)>=C.cap) continue;
+      cand.push(v);
+    }
+    const ok=arr=>{
+      if(C.semSeq) for(let u=0;u<arr.length;u++) for(let w=u+1;w<arr.length;w++) if(Math.abs(arr[u]-arr[w])===1) return false;
+      if(C.parImpar){const p=parFix+arr.reduce((s,v)=>s+(v%2===0),0); if(Math.abs(2*p-x)>1) return false}
+      if(C.lim<99) for(let j=0;j<L.length;j++){ if(j===i) continue; let o=ovFix[j]; for(const v of arr) o+=inL[j][v]; if(o>C.lim) return false }
+      return true;
+    };
+    const valor=arr=>{ // arr em ordem crescente
+      let s=0; for(const v of arr) s+=S[v];
+      for(let u=0;u<arr.length;u++) for(let w=u+1;w<arr.length;w++){ s+=P[arr[u]*61+arr[w]];
+        for(let z=w+1;z<arr.length;z++) s+=T[(arr[u]*61+arr[w])*61+arr[z]] }
+      return s;
+    };
+    const atual=R.slice().sort((p,q)=>p-q), vAtual=valor(atual);
+    let melhor=null;
+    const n=cand.length;
+    if(r===3){ for(let u=0;u<n;u++) for(let w=u+1;w<n;w++) for(let z=w+1;z<n;z++){
+        const arr=[cand[u],cand[w],cand[z]], v=valor(arr);
+        if(v>vAtual+1e-9&&(!melhor||v>melhor.v)&&ok(arr)) melhor={arr,v} } }
+    else if(r===2){ for(let u=0;u<n;u++) for(let w=u+1;w<n;w++){
+        const arr=[cand[u],cand[w]], v=valor(arr);
+        if(v>vAtual+1e-9&&(!melhor||v>melhor.v)&&ok(arr)) melhor={arr,v} } }
+    else { for(const c of cand){ const v=valor([c]); if(v>vAtual+1e-9&&(!melhor||v>melhor.v)&&ok([c])) melhor={arr:[c],v} } }
+    const novas=melhor?melhor.arr:atual;
+    for(const b of novas) for(const d of byNum[b]) h[d]++;
+    if(melhor){
+      const sai=R.filter(a=>!novas.includes(a)), entra=novas.filter(b=>!R.includes(b));
+      sai.forEach(a=>{inL[i][a]=0;cnt[a]--}); entra.forEach(b=>{inL[i][b]=1;cnt[b]++});
+      L[i]=fixos.concat(novas).sort((p,q)=>p-q);
+      trocas+=entra.length; linhasMudadas++;
+    }
+  }
+  const depois=premios();
+  let excessoDepois=0; for(let v=1;v<=60;v++) excessoDepois+=Math.max(0,cnt[v]-C.cap);
+  C.cliques++;
+  current=L; render(null);
+  const tot=new Array(7).fill(0); for(const hh of hits) for(let d=0;d<D;d++) tot[hh[d]]++;
+  const metaTxt=C.eq?'prêmios (quadras + quinas + senas)':(k===0?'linhas com 0 acertos':k===1?'prêmios de 1+ acerto':META[k]+'s ou mais');
+  $('info').textContent=`${current.length} linhas × ${x} números · ${fmtN(depois)} ${metaTxt} nos ${fmtN(D)} concursos de otimização · `+
+    [...Array(7).keys()].filter(h=>k===0?(h===0||h>=4):(h>=Math.min(k,4)&&h>=1)).map(h=>`${PLURAL[h].toLowerCase()} ${fmtN(tot[h])}`).join(', ')+
+    ` · cada dezena no máximo ${C.cap}×${excessoDepois?` (${excessoDepois} excesso${excessoDepois>1?'s':''} sem troca possível)`:''} · OTIMIZAR ${C.cliques}×`;
+  const repTxt=excessoAntes?`${excessoAntes-excessoDepois} repetiç${excessoAntes-excessoDepois===1?'ão eliminada':'ões eliminadas'}. `:'';
+  $('toast').textContent=repTxt+(trocas
+    ?`${trocas} dezena${trocas>1?'s':''} trocada${trocas>1?'s':''} em ${linhasMudadas} linha${linhasMudadas>1?'s':''} · ${fmtN(antes)} → ${fmtN(depois)} (${depois>=antes?'+':''}${fmtN(depois-antes)}). Clique de novo para continuar.`
+    :(excessoAntes?`${fmtN(antes)} → ${fmtN(depois)}. Clique de novo para continuar.`:'Nenhuma troca melhorou: as dezenas de cada linha já são as melhores para os filtros escolhidos. Use GERAR ou GERAR 10× para partir de outras linhas.'));
+  if(!$('rel').hidden) verificar();
+}
 
 /* ---------- verificação ---------- */
 function comb(n,k){if(k<0||k>n)return 0;let r=1;for(let i=1;i<=k;i++)r=r*(n-k+i)/i;return r}
@@ -17848,6 +17978,7 @@ function verificar(){
 
 $('form').addEventListener('submit',e=>{e.preventDefault();gerar()});
 $('verificar').addEventListener('click',verificar);
+$('otimizar').addEventListener('click',otimizarRuins);
 $('gerar10').addEventListener('click',()=>{if(!busy&&modo==='otim') gerarOtim(10)});
 $('copy').addEventListener('click',()=>{
   const txt=current.map(l=>l.map(pad).join(' ')).join('\n');
