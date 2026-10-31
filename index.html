@@ -18042,7 +18042,7 @@ function criarAba(C){
         <button type="button" id="${p}Copy">Copiar</button>
         <button type="submit" class="primary" id="${p}Gerar">GERAR SEQUÊNCIA</button>
         <button type="button" class="primary alt" id="${p}Gerar10">GERAR 10× (MELHORES)</button>
-        ${tem('otimizar')?`<button type="button" class="primary alt" id="${p}Otimizar" title="Troca só as dezenas que menos contribuem em cada linha, sem repetir dezenas entre as linhas">OTIMIZAR</button>`:''}
+        ${tem('otimizar')?`<button type="button" class="primary alt" id="${p}Otimizar" title="Troca só as dezenas que menos contribuem em cada linha${tem('rep')?', sem repetir dezenas entre as linhas':''}">OTIMIZAR</button>`:''}
         <button type="button" class="verify" id="${p}Verificar">VERIFICAR</button>
       </div>
       <span class="err" id="${p}Err" hidden></span>
@@ -18280,9 +18280,10 @@ function criarAba(C){
     const byNum=Array.from({length:NV+1},()=>[]); treino.forEach((d,i)=>d.n.forEach(v=>byNum[v].push(i)));
     const premiosDe=ls=>contagem(ls,treino).reduce((s,v,h)=>s+(premio(h,P)?v:0),0);
     const antes=premiosDe(S.lines);
-    G.cap=G.cap||Math.ceil(S.lines.length*X/C.U);
+    // limite de repetição só onde a aba tem o filtro de repetição (na Lotofácil repetir é inevitável)
+    G.cap=G.cap||(tem('rep')?Math.ceil(S.lines.length*X/C.U):0);
     const usoA=new Int16Array(NV+1); S.lines.forEach(l=>l.forEach(v=>usoA[v]++));
-    let excA=0; for(let v=C.base;v<=hi;v++) excA+=Math.max(0,usoA[v]-G.cap);
+    let excA=0; if(G.cap) for(let v=C.base;v<=hi;v++) excA+=Math.max(0,usoA[v]-G.cap);
     let base=S.lines;
     if(excA){
       travar(true); E('Prog').hidden=false;
@@ -18328,7 +18329,7 @@ function criarAba(C){
       const cand=[]; for(let v=C.base;v<=hi;v++){
         if(fx[v]) continue;
         if(G.maxRun===1&&((v>C.base&&fx[v-1])||(v<hi&&fx[v+1]))) continue;
-        if(cntSem(v)>=G.cap) continue;
+        if(G.cap&&cntSem(v)>=G.cap) continue;
         cand.push(v);
       }
       const ok=arr=>{
@@ -18357,7 +18358,7 @@ function criarAba(C){
     G.cliques++;
     S.lines=L; render(null);
     const depois=premiosDe(L), tot=contagem(L,treino);
-    let excD=0; for(let v=C.base;v<=hi;v++) excD+=Math.max(0,cnt[v]-G.cap);
+    let excD=0; if(G.cap) for(let v=C.base;v<=hi;v++) excD+=Math.max(0,cnt[v]-G.cap);
     E('Info').textContent=`${L.length} linhas de ${X} · ${fmtN(depois)} prêmios somados nos ${fmtN(D)} concursos de otimização · `+
       faixasDe(P).map(h=>`${h}: ${fmtN(tot[h])}`).join(', ')+filtrosTxt(L,G,null)+` · OTIMIZAR ${G.cliques}×`;
     const repTxt=excA?`${excA-excD} repetiç${excA-excD===1?'ão eliminada':'ões eliminadas'}. `:'';
@@ -18406,7 +18407,7 @@ function criarAba(C){
       <div class="totais lm"><span class="lbl">Total do conjunto · ${S.lines.length} linhas somadas</span>
         <div class="cards">${fx.map(h=>`<div class="card tot"><span class="lbl">${h} acertos</span><span class="v">${fmtN(R.dist[h])}</span><span class="d">acaso: ${fmtD(esp(h),esp(h)<10?2:0)}</span></div>`).join('')}</div></div>
       <div class="cards">
-        <div class="card"><span class="lbl">Prêmios na meta</span><span class="v">${fmtN(obsP)}</span><span class="d">acaso: ${fmtD(espP,1)}</span></div>
+        <div class="card"><span class="lbl">Prêmios na meta</span><span class="v">${fmtN(obsP)}</span><span class="d">acaso: ${fmtD(espP,espP<1?3:1)}</span></div>
         <div class="card"><span class="lbl">Eficiência × acaso</span><span class="v ratio ${r>=1.1?'up':r<=0.9?'down':''}">${fmtD(r,2)}×</span><span class="d">prêmios observados / esperados</span></div>
         <div class="card"><span class="lbl">Melhor resultado</span><span class="v">${Math.max(...R.lines.map(s=>s.max))} acertos</span><span class="d">em uma linha e concurso</span></div>
         <div class="card"><span class="lbl">Média de acertos</span><span class="v">${fmtD(R.dist.reduce((s,v,h)=>s+v*h,0)/total,3)}</span><span class="d">por linha e concurso · acaso: ${fmtD(mediaEsp,3)}</span></div>
@@ -18454,7 +18455,7 @@ criarAba({p:'lm',nome:'Lotomania',arquivo:'lotomania.csv',embed:'dadosLM',U:100,
   faixas:[20,19,18,17,16,15,0],lims:[30,35,40,45],limDef:35,iters:[8000,30000],url:'valorfinal.com.br/dados/loterias/lotomania.csv'});
 criarAba({p:'lf',nome:'Lotofácil',arquivo:'lotofacil.csv',embed:'dadosLF',U:25,base:1,K:15,X:{min:15,max:20,def:15},cols:5,linhasDef:10,
   desc:'Lotofácil: 15 dezenas sorteadas entre 01 e 25, cada aposta marca de 15 a 20. Prêmios para 15, 14, 13, 12 e 11 acertos. As linhas são otimizadas para somar o máximo de prêmios nos concursos da amostragem.',
-  metas:[{v:'11',t:'11+ acertos'},{v:'12',t:'12+ acertos'},{v:'13',t:'13+ acertos',def:1},{v:'14',t:'14+ acertos'}],metaMaxK:11,zero:false,filtros:['seqMax'],seqMax:5,
+  metas:[{v:'11',t:'11+ acertos'},{v:'12',t:'12+ acertos'},{v:'13',t:'13+ acertos',def:1},{v:'14',t:'14+ acertos'},{v:'15',t:'15 acertos (15+)'}],metaMaxK:11,zero:false,filtros:['seqMax','otimizar'],seqMax:5,
   faixas:[15,14,13,12,11],lims:[9,10,11,12,13,14,15,16,17],limDef:11,iters:[6000,25000],url:'valorfinal.com.br/dados/loterias/lotofacil.csv'});
 $('tab-loto').addEventListener('click',()=>setModo('loto'));
 $('tab-lf').addEventListener('click',()=>setModo('lf'));
