@@ -164,6 +164,7 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
       <div class="field">
         <label for="meta">Meta por concurso</label>
         <select id="meta">
+          <option value="0">Zero (0 acertos)</option>
           <option value="1">1 acerto (1+)</option>
           <option value="2">Duque (2+)</option>
           <option value="3">Terno (3+)</option>
@@ -187,7 +188,8 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
         <label class="chk"><input type="checkbox" id="fSeq" checked> Sem números em sequência</label>
         <label class="chk"><input type="checkbox" id="fPar" checked> Equilíbrio par/ímpar</label>
         <label class="chk"><input type="checkbox" id="fTodos"> Incluir todos de 1 a 60</label>
-        <span class="hint">ex.: 35 e 36 não; 6 números = 3 pares e 3 ímpares; todas as 60 dezenas no conjunto</span>
+        <label class="chk"><input type="checkbox" id="fRep"> Evitar repetir dezenas entre linhas</label>
+        <span class="hint">ex.: 35 e 36 não; 6 números = 3 pares e 3 ímpares; todas as 60 dezenas no conjunto; cada dezena o mínimo de vezes possível</span>
       </fieldset>
       <div class="field" id="limField">
         <label for="lim">Dezenas em comum</label>
@@ -17318,8 +17320,9 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
 <script>
 const $=id=>document.getElementById(id);
 const NOMES=['','','','Terno','Quadra','Quina','Sena'];
-const PLURAL=['','1 acerto','Duques','Ternos','Quadras','Quinas','Senas'];
-const META=['','1 acerto','duque','terno','quadra','quina','sena'];
+const naMeta=(h,k)=>k===0?h===0:h>=k;
+const PLURAL=['Zeros','1 acerto','Duques','Ternos','Quadras','Quinas','Senas'];
+const META=['zero','1 acerto','duque','terno','quadra','quina','sena'];
 let current=[], draws=[], cfg=null, busy=false;
 
 /* ---------- amostragem ---------- */
@@ -17367,9 +17370,9 @@ function split(teste){const t=Math.min(teste,draws.length-50);return {treino:dra
    Σ g(acertos) sobre os concursos de treino ainda não cobertos, onde
    g = 1 + 0,25·(acertos − meta) quando acertos ≥ meta, 0,02 quando falta 1 acerto, 0 abaixo disso.
    Depois de escolhida, a linha marca como cobertos os concursos em que atingiu a meta. */
-function otimizarLinha(train,byNum,covered,x,k,iters,prev=[],lim=99,T0=1.5,eq=false,semSeq=false,parImpar=false){
+function otimizarLinha(train,byNum,covered,x,k,iters,prev=[],lim=99,T0=1.5,eq=false,semSeq=false,parImpar=false,cap=0){
   const D=train.length, g=new Float64Array(8);
-  for(let h=0;h<=7;h++) g[h]=h>=k?(eq?1:1+0.25*(h-k)):(h===k-1?0.02:0);
+  for(let h=0;h<=7;h++) g[h]=k===0?(h===0?1:(h===1?0.02:0)):(h>=k?(eq?1:1+0.25*(h-k)):(h===k-1?0.02:0));
   // filtros: sem dezenas consecutivas (ex.: 35 e 36) e equilíbrio par/ímpar (diferença máxima de 1)
   const maxPar=Math.ceil(x/2);
   let inL, line, pares;
@@ -17398,6 +17401,10 @@ function otimizarLinha(train,byNum,covered,x,k,iters,prev=[],lim=99,T0=1.5,eq=fa
   const ov=P.map(m=>line.reduce((s,v)=>s+m[v],0));
   const PEN=8; let exc=ov.reduce((s,o)=>s+Math.max(0,o-lim),0);
   score-=PEN*exc;
+  // evitar repetir dezenas: cada dezena acima do teto (uso nas outras linhas + 1 > cap) custa PENR pontos
+  const uso=new Uint16Array(62); if(cap) for(const l of prev) for(const v of l) uso[v]++;
+  const PENR=5, rep=v=>cap?Math.max(0,uso[v]+1-cap):0;
+  let excR=0; for(const v of line) excR+=rep(v); score-=PENR*excR;
   let best=exc?-Infinity:score, bestLine=line.slice();
   const T1=0.01;
   for(let it=0;it<iters;it++){
@@ -17411,8 +17418,9 @@ function otimizarLinha(train,byNum,covered,x,k,iters,prev=[],lim=99,T0=1.5,eq=fa
     let dexc=0;
     for(let j=0;j<P.length;j++){const o=ov[j],n=o-P[j][a]+P[j][b];dexc+=Math.max(0,n-lim)-Math.max(0,o-lim)}
     delta-=PEN*dexc;
+    const dR=rep(b)-rep(a); delta-=PENR*dR;
     if(delta>=0||Math.random()<Math.exp(delta/T)){
-      line[pi]=b;inL[a]=0;inL[b]=1;score+=delta;exc+=dexc;pares+=(b%2===0?1:0)-(a%2===0?1:0);
+      line[pi]=b;inL[a]=0;inL[b]=1;score+=delta;exc+=dexc;excR+=dR;pares+=(b%2===0?1:0)-(a%2===0?1:0);
       for(let j=0;j<P.length;j++) ov[j]+=P[j][b]-P[j][a];
       if(exc===0&&score>best+1e-9){best=score;bestLine=line.slice()}
     }else{
@@ -17531,15 +17539,16 @@ async function gerarFech(){
 
 /* filtro "incluir todos de 1 a 60": insere cada dezena ausente na troca que menos custa
    (sem quebrar os outros filtros), depois melhora as linhas só com trocas que não deixam dezena faltando */
-function garantirTodos(lines,treino,byNum,k,eq,x,semSeq,parImpar,lim){
+function garantirTodos(lines,treino,byNum,k,eq,x,semSeq,parImpar,lim,cap=0,todos=true){
   const D=treino.length, g=new Float64Array(8);
-  for(let h=0;h<=7;h++) g[h]=h>=k?(eq?1:1+0.25*(h-k)):(h===k-1?0.02:0);
+  for(let h=0;h<=7;h++) g[h]=k===0?(h===0?1:(h===1?0.02:0)):(h>=k?(eq?1:1+0.25*(h-k)):(h===k-1?0.02:0));
   const L=lines.map(l=>l.slice()), cnt=new Int16Array(62);
   L.forEach(l=>l.forEach(v=>cnt[v]++));
   const inL=L.map(l=>{const m=new Uint8Array(62);l.forEach(v=>m[v]=1);return m});
   const hits=L.map(l=>{const h=new Int8Array(D);for(const v of l)for(const d of byNum[v])h[d]++;return h});
   const pode=(i,a,b,comLim)=>{
     const m=inL[i]; if(m[b]) return false;
+    if(cap&&cnt[b]>=cap) return false;
     if(semSeq&&((b>1&&m[b-1]&&b-1!==a)||(b<60&&m[b+1]&&b+1!==a))) return false;
     if(parImpar){const p=L[i].reduce((s,v)=>s+(v%2===0),0)-(a%2===0)+(b%2===0);if(Math.abs(2*p-x)>1) return false}
     if(comLim) for(let j=0;j<L.length;j++){if(j===i)continue;let o=0;for(const v of L[i]) o+=inL[j][v];o+=inL[j][b]-inL[j][a];if(o>lim) return false}
@@ -17553,7 +17562,21 @@ function garantirTodos(lines,treino,byNum,k,eq,x,semSeq,parImpar,lim){
   const trocar=(i,a,b)=>{L[i][L[i].indexOf(a)]=b;inL[i][a]=0;inL[i][b]=1;cnt[a]--;cnt[b]++;
     for(const d of byNum[a]) hits[i][d]--; for(const d of byNum[b]) hits[i][d]++};
   let trocas=0; const faltando=[];
-  for(let m=1;m<=60;m++){
+  // dezenas acima do teto: troca uma ocorrência pela dezena menos usada que couber
+  if(cap) for(let v=1;v<=60;v++){
+    while(cnt[v]>cap){
+      let melhor=null;
+      for(const comLim of [true,false]){
+        for(let i=0;i<L.length;i++){ if(!inL[i][v]) continue;
+          for(let b=1;b<=60;b++){ if(cnt[b]>=cap||!pode(i,v,b,comLim)) continue;
+            const dl=ganho(i,v,b)+(cnt[b]===0?100:0); if(!melhor||dl>melhor.dl) melhor={i,b,dl}}}
+        if(melhor) break;
+      }
+      if(!melhor) break;
+      trocar(melhor.i,v,melhor.b); trocas++;
+    }
+  }
+  for(let m=1;m<=60&&todos;m++){
     if(cnt[m]) continue;
     let melhor=null;
     for(const comLim of [true,false]){
@@ -17584,7 +17607,7 @@ function garantirTodos(lines,treino,byNum,k,eq,x,semSeq,parImpar,lim){
 function criarPool(treino,byNum){
   try{
     const n=Math.min(8,Math.max(2,navigator.hardwareConcurrency||4));
-    const src=`${rnd.toString()}\n${otimizarLinha.toString()}\nlet T;onmessage=e=>{const m=e.data;if(m.init){T=m;return}postMessage(otimizarLinha(T.train,T.byNum,m.covered,m.x,m.k,m.iters,m.prev,m.lim,m.T0,m.eq,m.semSeq,m.parImpar))}`;
+    const src=`${rnd.toString()}\n${otimizarLinha.toString()}\nlet T;onmessage=e=>{const m=e.data;if(m.init){T=m;return}postMessage(otimizarLinha(T.train,T.byNum,m.covered,m.x,m.k,m.iters,m.prev,m.lim,m.T0,m.eq,m.semSeq,m.parImpar,m.cap))}`;
     const url=URL.createObjectURL(new Blob([src],{type:'text/javascript'}));
     const ws=Array.from({length:n},()=>new Worker(url));
     const train=treino.map(d=>({n:d.n}));
@@ -17619,15 +17642,15 @@ async function gerarOtim(rodadas=1){
   const byNumT=byNum.map(a=>Int32Array.from(a));
   let covered=new Uint8Array(D), lines=[]; const zero=new Uint8Array(D);
   const obj=$('obj').value, soma=obj==='soma', lim=soma?parseInt($('lim').value,10):99;
-  const eq=$('meta').value==='4t', semSeq=$('fSeq').checked, parImpar=$('fPar').checked;
+  const eq=$('meta').value==='4t', semSeq=$('fSeq').checked, parImpar=$('fPar').checked, cap=$('fRep').checked?Math.ceil(n*x/60):0;
   const busca=$('busca').value, maxima=busca==='max', prof=busca==='prof';
   const pool=maxima?criarPool(treino,byNumT):null;
   const restarts=maxima?Math.max(4,pool?pool.n:4):(prof?4:2);
   const iters=maxima?60000:(prof?40000:(soma?12000:7000)), T0=maxima?3:1.5;
   const passes=maxima&&soma?1:0, etapas=n*(1+passes);
   const melhorDe=async(cov,prev)=>{
-    const tarefas=Array.from({length:restarts},()=>({covered:cov,x,k,iters,prev,lim,T0,eq,semSeq,parImpar}));
-    const res=pool?await pool.rodar(tarefas):tarefas.map(m=>otimizarLinha(treino,byNumT,m.covered,x,k,iters,prev,lim,T0,eq,semSeq,parImpar));
+    const tarefas=Array.from({length:restarts},()=>({covered:cov,x,k,iters,prev,lim,T0,eq,semSeq,parImpar,cap}));
+    const res=pool?await pool.rodar(tarefas):tarefas.map(m=>otimizarLinha(treino,byNumT,m.covered,x,k,iters,prev,lim,T0,eq,semSeq,parImpar,cap));
     return res.reduce((a,b)=>b.score>a.score?b:a);
   };
   const t0=Date.now(), total=etapas*rodadas; let rod=0, cab='';
@@ -17637,9 +17660,9 @@ async function gerarOtim(rodadas=1){
     const seg=g?Math.round((Date.now()-t0)/1000*(total-g)/g):null;
     $('progTxt').textContent=cab+txt+(seg!==null&&(maxima||rodadas>1)?` · cerca de ${seg<60?seg+' s':Math.ceil(seg/60)+' min'} restantes`:'');
   };
-  const pontos=l=>{const g=new Float64Array(8);for(let h=0;h<8;h++)g[h]=h>=k?(eq?1:1+0.25*(h-k)):(h===k-1?0.02:0);
+  const pontos=l=>{const g=new Float64Array(8);for(let h=0;h<8;h++)g[h]=k===0?(h===0?1:(h===1?0.02:0)):(h>=k?(eq?1:1+0.25*(h-k)):(h===k-1?0.02:0));
     const has=new Uint8Array(61);l.forEach(v=>has[v]=1);let s=0;for(const d of treino){let h=0;for(const v of d.n)h+=has[v];s+=g[h]}return s};
-  const premiosDe=ls=>{let p=0;for(const l of ls){const has=new Uint8Array(61);l.forEach(v=>has[v]=1);for(const d of treino){let h=0;for(const v of d.n)h+=has[v];if(h>=k)p++}}return p};
+  const premiosDe=ls=>{let p=0;for(const l of ls){const has=new Uint8Array(61);l.forEach(v=>has[v]=1);for(const d of treino){let h=0;for(const v of d.n)h+=has[v];if(naMeta(h,k))p++}}return p};
   const banco=new Map(); // todas as linhas de todas as rodadas, sem repetição
   let melhorConjunto=null;
   try{
@@ -17651,7 +17674,7 @@ async function gerarOtim(rodadas=1){
       await tick();
       const melhor=await melhorDe(soma?zero:covered,lines);
       const has=new Uint8Array(61);melhor.line.forEach(v=>has[v]=1);
-      treino.forEach((d,j)=>{let h=0;for(const v of d.n)h+=has[v];if(h>=k)covered[j]=1});
+      treino.forEach((d,j)=>{let h=0;for(const v of d.n)h+=has[v];if(naMeta(h,k))covered[j]=1});
       lines.push(melhor.line);
     }
     // refinamento: reotimiza cada linha mantendo as demais fixas
@@ -17670,31 +17693,33 @@ async function gerarOtim(rodadas=1){
    }
   }finally{pool&&pool.fechar()}
   // escolhe as n melhores linhas do banco de todas as rodadas
-  function coberturaDe(ls){const c=new Uint8Array(D);for(const l of ls){const has=new Uint8Array(61);l.forEach(v=>has[v]=1);treino.forEach((d,j)=>{let h=0;for(const v of d.n)h+=has[v];if(h>=k)c[j]=1})}return c.reduce((a,b)=>a+b,0)}
+  function coberturaDe(ls){const c=new Uint8Array(D);for(const l of ls){const has=new Uint8Array(61);l.forEach(v=>has[v]=1);treino.forEach((d,j)=>{let h=0;for(const v of d.n)h+=has[v];if(naMeta(h,k))c[j]=1})}return c.reduce((a,b)=>a+b,0)}
   function selecionar(cands){
     if(soma){ // maiores pontuações individuais, respeitando o limite de dezenas em comum
-      const ord=cands.slice().sort((a,b)=>b.s-a.s), sel=[];
+      const ord=cands.slice().sort((a,b)=>b.s-a.s), sel=[], u=new Uint16Array(62);
       for(const c of ord){if(sel.length>=n)break;
-        if(sel.every(o=>o.l.filter(v=>c.l.includes(v)).length<=lim)) sel.push(c)}
+        if(cap&&c.l.some(v=>u[v]>=cap)) continue;
+        if(sel.every(o=>o.l.filter(v=>c.l.includes(v)).length<=lim)){sel.push(c);c.l.forEach(v=>u[v]++)}}
       for(const c of ord){if(sel.length>=n)break;if(!sel.includes(c))sel.push(c)}
       return sel.map(c=>c.l);
     }
     // cobrir: escolha gulosa da linha que cobre mais concursos ainda não alcançados
-    const cov=new Uint8Array(D), hitsDe=cands.map(c=>{const has=new Uint8Array(61);c.l.forEach(v=>has[v]=1);const a=[];treino.forEach((d,j)=>{let h=0;for(const v of d.n)h+=has[v];if(h>=k)a.push(j)});return a});
-    const usado=new Uint8Array(cands.length), sel=[];
+    const cov=new Uint8Array(D), hitsDe=cands.map(c=>{const has=new Uint8Array(61);c.l.forEach(v=>has[v]=1);const a=[];treino.forEach((d,j)=>{let h=0;for(const v of d.n)h+=has[v];if(naMeta(h,k))a.push(j)});return a});
+    const usado=new Uint8Array(cands.length), sel=[], uS=new Uint16Array(62);
     while(sel.length<n&&sel.length<cands.length){
       let bi=-1,bv=-1;
-      cands.forEach((c,i)=>{if(usado[i])return;let v=0;for(const j of hitsDe[i]) if(!cov[j]) v++;v+=c.s*1e-4;if(v>bv){bv=v;bi=i}});
-      usado[bi]=1;sel.push(cands[bi].l);for(const j of hitsDe[bi]) cov[j]=1;
+      cands.forEach((c,i)=>{if(usado[i])return;let v=0;if(cap&&c.l.some(w=>uS[w]>=cap))v-=1e6;for(const j of hitsDe[i]) if(!cov[j]) v++;v+=c.s*1e-4;if(v>bv){bv=v;bi=i}});
+      usado[bi]=1;sel.push(cands[bi].l);cands[bi].l.forEach(w=>uS[w]++);for(const j of hitsDe[bi]) cov[j]=1;
     }
     return sel;
   }
   if(rodadas>1) lines=melhorConjunto.lines;
   let cobTodos=null;
-  if($('fTodos').checked){cobTodos=garantirTodos(lines,treino,byNumT,k,eq,x,semSeq,parImpar,lim);lines=cobTodos.lines}
+  const todos=$('fTodos').checked;
+  if(todos||cap){cobTodos=garantirTodos(lines,treino,byNumT,k,eq,x,semSeq,parImpar,lim,cap,todos);lines=cobTodos.lines}
   if(rodadas>1||cobTodos){
     covered=new Uint8Array(D);
-    for(const l of lines){const has=new Uint8Array(61);l.forEach(v=>has[v]=1);treino.forEach((d,j)=>{let h=0;for(const v of d.n)h+=has[v];if(h>=k)covered[j]=1})}
+    for(const l of lines){const has=new Uint8Array(61);l.forEach(v=>has[v]=1);treino.forEach((d,j)=>{let h=0;for(const v of d.n)h+=has[v];if(naMeta(h,k))covered[j]=1})}
   }
   $('progBar').style.width='100%';
   current=lines; cfg={mode:'otim',x,n,k,t,soma};
@@ -17702,12 +17727,15 @@ async function gerarOtim(rodadas=1){
   const out=$('out');out.classList.remove('fresh');void out.offsetWidth;out.classList.add('fresh');
   render(null);
   let premios=0; const tot=new Array(7).fill(0);
-  for(const l of lines){const has=new Uint8Array(61);l.forEach(v=>has[v]=1);for(const d of treino){let h=0;for(const v of d.n)h+=has[v];tot[h]++;if(h>=k)premios++}}
+  for(const l of lines){const has=new Uint8Array(61);l.forEach(v=>has[v]=1);for(const d of treino){let h=0;for(const v of d.n)h+=has[v];tot[h]++;if(naMeta(h,k))premios++}}
+  const usoF=new Uint16Array(62); lines.forEach(l=>l.forEach(v=>usoF[v]++));
+  let maxUso=0,acima=0; for(let v=1;v<=60;v++){maxUso=Math.max(maxUso,usoF[v]); if(cap&&usoF[v]>cap) acima++}
   const filtTxt=[semSeq&&'sem sequências',parImpar&&'par/ímpar equilibrado',
-    cobTodos&&(cobTodos.faltando.length?`faltaram ${cobTodos.faltando.map(pad).join(' ')}`:`todas as 60 dezenas presentes (${cobTodos.trocas} trocas)`)].filter(Boolean).join(', ');
-  const totTxt=' · '+[...Array(7).keys()].filter(h=>h>=Math.min(k,4)&&h>=1).map(h=>`${PLURAL[h].toLowerCase()} ${fmtN(tot[h])}`).join(', ').replace(/^1 acerto (\S+)/,'1 acerto: $1')+(filtTxt?` · filtros: ${filtTxt}`:'')+(rodadas>1?` · melhores de ${rodadas} rodadas (${fmtN(banco.size)} linhas avaliadas)`:'');
+    cap&&(acima?`${acima} dezena${acima>1?'s':''} acima de ${cap}×`:`cada dezena no máximo ${cap}×`),
+    todos&&cobTodos&&(cobTodos.faltando.length?`faltaram ${cobTodos.faltando.map(pad).join(' ')}`:`todas as 60 dezenas presentes (${cobTodos.trocas} trocas)`)].filter(Boolean).join(', ');
+  const totTxt=' · '+[...Array(7).keys()].filter(h=>k===0?(h===0||h>=4):(h>=Math.min(k,4)&&h>=1)).map(h=>`${PLURAL[h].toLowerCase()} ${fmtN(tot[h])}`).join(', ').replace(/^1 acerto (\S+)/,'1 acerto: $1')+(filtTxt?` · filtros: ${filtTxt}`:'')+(rodadas>1?` · melhores de ${rodadas} rodadas (${fmtN(banco.size)} linhas avaliadas)`:'');
   $('info').textContent=soma
-    ?`${n} linhas × ${x} números · ${fmtN(premios)} ${eq?'prêmios (quadras + quinas + senas)':(k===1?'prêmios de 1+ acerto':META[k]+'s ou mais')} ${eq||k===1?'somados':'somadas'} nos ${fmtN(D)} concursos de otimização · até ${lim} dezenas em comum${totTxt}`
+    ?`${n} linhas × ${x} números · ${fmtN(premios)} ${eq?'prêmios (quadras + quinas + senas)':(k===0?'linhas com 0 acertos':k===1?'prêmios de 1+ acerto':META[k]+'s ou mais')} ${eq||k<=1?'somados':'somadas'} nos ${fmtN(D)} concursos de otimização · até ${lim} dezenas em comum${totTxt}`
     :`${n} linhas × ${x} números · meta ${META[k]} · ${fmtN(cob)} de ${fmtN(D)} concursos de otimização cobertos${totTxt}`;
   $('prog').hidden=true; $('toast').textContent='';
   travar(false);
@@ -17724,14 +17752,14 @@ function analisar(set){
     const cnt=new Array(7).fill(0); let max=-1,best=null,ties=0;
     set.forEach((d,j)=>{
       let h=0; for(const v of d.n) h+=has[v];
-      cnt[h]++; if(h>=k) cobertos[j]=1;
+      cnt[h]++; if(naMeta(h,k)) cobertos[j]=1;
       if(h>max){max=h;best=d;ties=1}else if(h===max){ties++;best=d}
     });
     cnt.forEach((v,i)=>dist[i]+=v);
     return {max,bestDraw:best,ties,cnt,media:cnt.reduce((s,v,i)=>s+v*i,0)/D};
   });
   // cobertura esperada se as mesmas linhas fossem aleatórias
-  const x=current[0].length, pk=[0,1,2,3,4,5,6].filter(h=>h>=k).reduce((s,h)=>s+comb(x,h)*comb(60-x,6-h),0)/comb(60,6);
+  const x=current[0].length, pk=[0,1,2,3,4,5,6].filter(h=>naMeta(h,k)).reduce((s,h)=>s+comb(x,h)*comb(60-x,6-h),0)/comb(60,6);
   let gar=null;
   if(cfg.mode==='fech'){ // concursos em que a condição da garantia ocorreu e se o prêmio veio
     const no=new Uint8Array(61); cfg.grupo.forEach(v=>no[v]=1);
@@ -17758,7 +17786,7 @@ function bloco(S,rotulo,classe,completo){
   const media=S.dist.reduce((s,v,h)=>s+v*h,0)/total;
   const maxDist=Math.max(...S.dist,...[0,1,2,3,4,5,6].map(esp));
   const porPremio=cfg.mode==='otim'&&cfg.soma;
-  const premObs=S.dist.reduce((a,v,h)=>a+(h>=k?v:0),0), premEsp=[0,1,2,3,4,5,6].filter(h=>h>=k).reduce((a,h)=>a+esp(h),0);
+  const premObs=S.dist.reduce((a,v,h)=>a+(naMeta(h,k)?v:0),0), premEsp=[0,1,2,3,4,5,6].filter(h=>naMeta(h,k)).reduce((a,h)=>a+esp(h),0);
   const razao=porPremio?(premEsp>0?premObs/premEsp:0):(S.cobEsp>0?S.cob/S.cobEsp:0);
   const rows=[0,1,2,3,4,5,6].map(h=>{
     const e=esp(h),o=S.dist[h],r=e>0?o/e:0, cls=e<0.5?'':(r>=1.1?'up':(r<=0.9?'down':''));
@@ -17774,11 +17802,11 @@ function bloco(S,rotulo,classe,completo){
     <div class="totais">
       <span class="lbl">Total do conjunto · ${current.length} linhas somadas</span>
       <div class="cards">
-        ${[1,2,3,4,5,6].filter(h=>h>=Math.min(k,4)).map(h=>`<div class="card tot"><span class="lbl">${PLURAL[h]}</span><span class="v">${fmtN(S.dist[h])}</span><span class="d">acaso: ${(esp(h)>=100?fmtN(Math.round(esp(h))):fmtD(esp(h),h===4?1:2))}</span></div>`).join('')}
+        ${[0,1,2,3,4,5,6].filter(h=>k===0?(h===0||h>=4):(h>=1&&h>=Math.min(k,4))).map(h=>`<div class="card tot"><span class="lbl">${PLURAL[h]}</span><span class="v">${fmtN(S.dist[h])}</span><span class="d">acaso: ${(esp(h)>=100?fmtN(Math.round(esp(h))):fmtD(esp(h),h===4?1:2))}</span></div>`).join('')}
       </div>
     </div>
     <div class="cards">
-      <div class="card"><span class="lbl">Concursos com ${META[k]}+</span><span class="v">${fmtN(S.cob)}</span><span class="d">em pelo menos uma linha · acaso: ${fmtD(S.cobEsp,1)}</span></div>
+      <div class="card"><span class="lbl">Concursos com ${k===0?'0 acertos':META[k]+'+'}</span><span class="v">${fmtN(S.cob)}</span><span class="d">em pelo menos uma linha · acaso: ${fmtD(S.cobEsp,1)}</span></div>
       <div class="card"><span class="lbl">Eficiência × acaso</span><span class="v ratio ${razao>=1.1?'up':razao<=0.9?'down':''}">${fmtD(razao,2)}×</span><span class="d">${porPremio?'prêmios na meta: observados / esperados':'cobertura observada / esperada'}</span></div>
       <div class="card"><span class="lbl">Melhor resultado</span><span class="v">${S.bestMax} acertos</span><span class="d">linha ${pad(top.i+1)} · conc. ${top.bestDraw.c}</span></div>
       <div class="card"><span class="lbl">Média de acertos</span><span class="v">${fmtD(media,3)}</span><span class="d">por linha e concurso · acaso: ${fmtD(6*x/60,3)}</span></div>
