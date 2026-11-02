@@ -18042,23 +18042,26 @@ function gruposDeTeste(conjuntos,teste){
 }
 // monta cada linha somente pela união de grupos inteiros (terno + terno, terno + duque, ...):
 // os números de um terno ou duque nunca são retirados depois de entrar na linha
+// monta cada linha somente pela união de grupos inteiros (terno + terno, terno + duque, ...):
+// os números de um terno ou duque nunca são retirados depois de entrar na linha.
+// Nenhuma linha pode ter mais de 4 números em comum com outra (nem com o limite "dezenas em comum", se for menor).
 function montarInterpolado(grupos,n,x,F){
   const porNum=Array.from({length:61},()=>[]); grupos.forEach((g,i)=>g.n.forEach(v=>porNum[v].push(i)));
-  const usado=new Float64Array(grupos.length), lines=[], uso=new Uint16Array(62), cap=F.cap||0, maxPar=Math.ceil(x/2);
+  const usado=new Float64Array(grupos.length), lines=[], uso=new Uint16Array(62), maxPar=Math.ceil(x/2);
+  const lim=Math.min(F.lim||99,4,x-1);
   const peso=i=>grupos[i].w*(grupos[i].n.length===3?1.5:1)/(1+2*usado[i]);
   for(let li=0;li<n;li++){
     const prevM=lines.map(l=>{const m=new Uint8Array(62);l.forEach(v=>m[v]=1);return m});
-    // cabe: o conjunto de números novos pode entrar sem quebrar os filtros?
+    let capOn=!!F.cap;
     const cabe=(inL,novos)=>{
       const tam=inL.reduce((s,v)=>s+v,0)+novos.length; if(tam>x) return false;
       const m=inL.slice(); for(const v of novos){ if(m[v]) return false; m[v]=1 }
       if(F.semSeq) for(const v of novos) if((v>1&&m[v-1])||(v<60&&m[v+1])) return false;
       if(F.parImpar){let p=0,q=0;for(let v=1;v<=60;v++) if(m[v]) (v%2===0?p++:q++); if(p>maxPar||q>maxPar) return false}
-      if(cap) for(const v of novos) if(uso[v]>=cap) return false;
-      if(F.lim<99) for(const pm of prevM){let o=0;for(let v=1;v<=60;v++) if(m[v]&&pm[v]) o++; if(o>F.lim) return false}
+      if(capOn) for(const v of novos) if(uso[v]>=F.cap) return false;
+      for(const pm of prevM){let o=0;for(let v=1;v<=60;v++) if(m[v]&&pm[v]) o++; if(o>lim) return false}
       return true;
     };
-    // ganho: peso dos grupos que ficam inteiros na linha ao acrescentar "novos"
     const ganho=(inL,novos)=>{
       const m=inL.slice(); novos.forEach(v=>m[v]=1); let s=0; const vistos=new Set();
       for(const v of novos) for(const i of porNum[v]){ if(vistos.has(i)) continue; vistos.add(i);
@@ -18066,39 +18069,47 @@ function montarInterpolado(grupos,n,x,F){
       return s;
     };
     const ordem=grupos.map((g,i)=>i).sort((a,b)=>peso(b)-peso(a));
-    const inicios=ordem.filter(i=>grupos[i].n.length===3).slice(0,10);
-    if(inicios.length<3) inicios.push(...ordem.slice(0,10-inicios.length));
-    let melhor=null;
-    for(const ini of inicios){
-      const inL=new Uint8Array(62);
-      if(!cabe(inL,grupos[ini].n)) continue;
-      grupos[ini].n.forEach(v=>inL[v]=1);
-      let total=ganho(new Uint8Array(62),grupos[ini].n);
-      while(true){
-        const tam=inL.reduce((s,v)=>s+v,0); if(tam>=x) break;
-        // próximo grupo inteiro (terno ou duque) que mais acrescenta
-        let bg=null;
-        for(const i of ordem){
-          const novos=grupos[i].n.filter(v=>!inL[v]);
-          if(!novos.length||!cabe(inL,novos)) continue;
-          const gn=ganho(inL,novos)/novos.length;
-          if(!bg||gn>bg.gn||(gn===bg.gn&&grupos[i].n.length>grupos[bg.i].n.length)) bg={i,novos,gn};
+    const tenta=inicios=>{
+      let melhor=null;
+      for(const ini of inicios){
+        const inL=new Uint8Array(62);
+        if(!cabe(inL,grupos[ini].n)) continue;
+        grupos[ini].n.forEach(v=>inL[v]=1);
+        let total=ganho(new Uint8Array(62),grupos[ini].n);
+        while(true){
+          const tam=inL.reduce((s,v)=>s+v,0); if(tam>=x) break;
+          let bg=null;
+          for(const i of ordem){
+            const novos=grupos[i].n.filter(v=>!inL[v]);
+            if(!novos.length||!cabe(inL,novos)) continue;
+            const gn=ganho(inL,novos)/novos.length;
+            if(!bg||gn>bg.gn||(gn===bg.gn&&grupos[i].n.length>grupos[bg.i].n.length)) bg={i,novos,gn};
+          }
+          if(bg&&bg.gn>0){ bg.novos.forEach(v=>inL[v]=1); total+=bg.gn*bg.novos.length; continue }
+          let bv=null;
+          for(let v=1;v<=60;v++){ if(inL[v]||!cabe(inL,[v])) continue; const gv=ganho(inL,[v])+Math.random()*1e-3; if(!bv||gv>bv.gv) bv={v,gv} }
+          if(!bv) break;
+          inL[bv.v]=1; total+=bv.gv;
         }
-        if(bg&&bg.gn>0){ bg.novos.forEach(v=>inL[v]=1); total+=bg.gn*bg.novos.length; continue }
-        // nenhum grupo cabe: completa com o número que mais fecha duques com os que já estão na linha
-        let bv=null;
-        for(let v=1;v<=60;v++){ if(inL[v]||!cabe(inL,[v])) continue; const gv=ganho(inL,[v])+Math.random()*1e-3; if(!bv||gv>bv.gv) bv={v,gv} }
-        if(!bv) break;
-        inL[bv.v]=1; total+=bv.gv;
+        const line=[]; for(let v=1;v<=60;v++) if(inL[v]) line.push(v);
+        if(line.length!==x) continue;
+        if(F.parImpar){const p=line.filter(v=>v%2===0).length; if(Math.abs(2*p-x)>1) continue}
+        if(!melhor||total>melhor.total) melhor={total,line};
       }
-      const line=[]; for(let v=1;v<=60;v++) if(inL[v]) line.push(v);
-      if(line.length!==x) continue;
-      if(F.parImpar){const p=line.filter(v=>v%2===0).length; if(Math.abs(2*p-x)>1) continue}
-      if(!melhor||total>melhor.total) melhor={total,line};
+      return melhor;
+    };
+    const ternos=ordem.filter(i=>grupos[i].n.length===3);
+    let melhor=tenta(ternos.slice(0,10).concat(ternos.length<3?ordem.slice(0,10):[]));
+    if(!melhor) melhor=tenta(ordem.slice(0,80));                 // outros grupos de partida
+    if(!melhor&&capOn){ capOn=false; melhor=tenta(ordem.slice(0,80)) } // aceita repetir dezenas
+    if(!melhor){ // última tentativa: linha aleatória que respeite os filtros e o limite de números em comum
+      for(let t=0;t<3000&&!melhor;t++){
+        const inL=new Uint8Array(62); let ok=true;
+        for(let k=0;k<x&&ok;k++){ let v=0; for(let r=0;r<40;r++){const c=1+rnd(60); if(!inL[c]&&cabe(inL,[c])){v=c;break}} if(v) inL[v]=1; else ok=false }
+        if(ok){ const line=[]; for(let v=1;v<=60;v++) if(inL[v]) line.push(v); melhor={total:0,line} }
+      }
     }
-    if(!melhor){ // sem combinação que respeite tudo: relaxa limite de dezenas em comum e repetição
-      const Fr={...F,lim:99,cap:0}; const r=montarInterpolado(grupos,1,x,Fr)[0]; melhor={line:r,total:0};
-    }
+    if(!melhor) break; // não cabe mais nenhuma linha diferente o bastante
     lines.push(melhor.line); melhor.line.forEach(v=>uso[v]++);
     const m=new Uint8Array(62); melhor.line.forEach(v=>m[v]=1);
     grupos.forEach((g,i)=>{if(g.n.every(v=>m[v])) usado[i]++});
@@ -18117,14 +18128,15 @@ $('interpolar').addEventListener('click',async()=>{
   const F={semSeq:$('fSeq').checked,parImpar:$('fPar').checked,lim:parseInt($('lim').value,10)||99,cap:$('fRep').checked?Math.ceil(n*x/60):0};
   $('progTxt').textContent=`Montando ${n} linhas com ${fmtN(grupos.length)} duques e ternos…`; $('progBar').style.width='60%'; await tick();
   const lines=montarInterpolado(grupos,n,x,F);
+  if(!lines.length){$('prog').hidden=true;travar(false);showErr('Não foi possível montar linhas com no máximo 4 números em comum entre si. Desligue algum filtro e tente de novo.');return}
   const metaV=$('meta').value;
-  current=lines; cfg={mode:'interp',x,n,k:parseInt(metaV,10),t,soma:true,eq:metaV==='4t'};
+  current=lines; cfg={mode:'interp',x,n:lines.length,k:parseInt(metaV,10),t,soma:true,eq:metaV==='4t'};
   const out=$('out');out.classList.remove('fresh');void out.offsetWidth;out.classList.add('fresh');
   render(null); $('rel').hidden=true;
   const ternos=grupos.filter(g=>g.n.length===3).length, duques=grupos.length-ternos;
   const dentro=grupos.filter(g=>lines.some(l=>g.n.every(v=>l.includes(v)))).length;
-  $('info').textContent=`${n} linhas × ${x} números interpoladas a partir das 2 últimas gerações · ${fmtN(duques)} duques e ${fmtN(ternos)} ternos acertados nos ${fmtN(teste.length)} concursos de teste · ${fmtN(dentro)} desses grupos estão inteiros nas novas linhas`;
-  $('toast').textContent='Clique em VERIFICAR para conferir.';
+  $('info').textContent=`${lines.length} linhas × ${x} números interpoladas a partir das 2 últimas gerações · ${fmtN(duques)} duques e ${fmtN(ternos)} ternos acertados nos ${fmtN(teste.length)} concursos de teste · ${fmtN(dentro)} desses grupos estão inteiros nas novas linhas`;
+  $('toast').textContent=(lines.length<n?`Só foi possível montar ${lines.length} linhas sem que duas tivessem mais de ${Math.min(F.lim||99,4)} números em comum. `:'')+'Nenhuma linha repete mais de '+Math.min(F.lim||99,4)+' números de outra. Clique em VERIFICAR para conferir.';
   $('prog').hidden=true; travar(false);
 });
 
@@ -18645,7 +18657,7 @@ function criarAba(C){
   function montarInterp(grupos,n,X,F){
     const hi=C.base+C.U-1, N1=NV+1, porNum=Array.from({length:N1},()=>[]); grupos.forEach((g,i)=>g.n.forEach(v=>porNum[v].push(i)));
     const usado=new Float64Array(grupos.length), lines=[], uso=new Uint16Array(N1), cap=F.cap||0;
-    const pMax=F.pares?Math.max(...F.pares):X, pMin=F.pares?Math.min(...F.pares):0, maxRun=F.maxRun||99, lim=F.lim||99;
+    const pMax=F.pares?Math.max(...F.pares):X, pMin=F.pares?Math.min(...F.pares):0, maxRun=F.maxRun||99, lim=Math.min(F.lim||99,X-1);
     const peso=i=>grupos[i].w*(grupos[i].n.length===3?1.5:1)/(1+2*usado[i]);
     for(let li=0;li<n;li++){
       const prevM=lines.map(l=>{const m=new Uint8Array(N1);l.forEach(v=>m[v]=1);return m});
@@ -18655,7 +18667,7 @@ function criarAba(C){
         if(maxRun<99) for(const v of novos){let lo=0;for(let w=v-1;w>=C.base&&m[w];w--)lo++;let up=0;for(let w=v+1;w<=hi&&m[w];w++)up++;if(lo+up+1>maxRun) return false}
         if(F.pares){let q=0,t=0;for(let v=C.base;v<=hi;v++) if(m[v]){t++;if(v%2===0)q++} if(q>pMax||t-q>X-pMin) return false}
         if(cap) for(const v of novos) if(uso[v]>=cap) return false;
-        if(lim<99) for(const pm of prevM){let o=0;for(let v=C.base;v<=hi;v++) if(m[v]&&pm[v]) o++; if(o>lim) return false}
+        for(const pm of prevM){let o=0;for(let v=C.base;v<=hi;v++) if(m[v]&&pm[v]) o++; if(o>lim) return false}
         return true;
       };
       const ganho=(inL,novos)=>{const m=inL.slice(); novos.forEach(v=>m[v]=1); let s2=0; const vistos=new Set();
@@ -18682,7 +18694,12 @@ function criarAba(C){
         if(F.pares&&!F.pares.includes(line.filter(v=>v%2===0).length)) continue;
         if(!melhor||total>melhor.total) melhor={total,line};
       }
-      if(!melhor){ const r=montarInterp(grupos,1,X,{...F,lim:99,cap:0}); melhor={line:r[0],total:0} }
+      if(!melhor){ // última tentativa: linha aleatória que respeite os filtros e o limite de dezenas em comum
+        for(let t=0;t<3000&&!melhor;t++){ const inL=new Uint8Array(N1); let tam=0, ok=true;
+          while(tam<X&&ok){ let v=-1; for(let r=0;r<40;r++){const c=C.base+rnd(C.U); if(!inL[c]&&cabe(inL,tam,[c])){v=c;break}} if(v>=0){inL[v]=1;tam++} else ok=false }
+          if(ok){ const line=[]; for(let v=C.base;v<=hi;v++) if(inL[v]) line.push(v); if(!F.pares||F.pares.includes(line.filter(v=>v%2===0).length)) melhor={line,total:0} } }
+      }
+      if(!melhor) break;
       lines.push(melhor.line); melhor.line.forEach(v=>uso[v]++);
       const m=new Uint8Array(N1); melhor.line.forEach(v=>m[v]=1); grupos.forEach((g,i)=>{if(g.n.every(v=>m[v])) usado[i]++});
     }
@@ -18699,11 +18716,12 @@ function criarAba(C){
     const F=C.filtros?{maxRun:liga('FSeq')?1:(liga('FSeqMax')?C.seqMax:99),pares:tem('par')?paresPermitidos(X):null,cap:liga('FRep')?Math.ceil(n*X/C.U):0,lim:parseInt(E('Lim').value,10)||99}:{lim:parseInt(E('Lim').value,10)||99};
     E('ProgTxt').textContent=`Montando ${n} linhas com ${fmtN(grupos.length)} duques e ternos…`; E('ProgBar').style.width='60%'; await tick();
     const lines=montarInterp(grupos,n,X,F), meta=E('Meta').value;
-    S.lines=lines; S.cfg={mode:'interp',n,t,lim:F.lim,meta,P:pesos(meta),X,cliques:0};
+    if(!lines.length){E('Prog').hidden=true;travar(false);erro('Não foi possível montar linhas diferentes o bastante entre si com os filtros atuais.');return}
+    S.lines=lines; S.cfg={mode:'interp',n:lines.length,t,lim:F.lim,meta,P:pesos(meta),X,cliques:0};
     render(null); E('Rel').hidden=true;
     const ternos=grupos.filter(g=>g.n.length===3).length, duques=grupos.length-ternos;
-    E('Info').textContent=`${n} linhas de ${X} interpoladas a partir das 2 últimas gerações · ${fmtN(duques)} duques e ${fmtN(ternos)} ternos acertados nos ${fmtN(teste.length)} concursos de teste`;
-    E('Toast').textContent='Clique em VERIFICAR para conferir.';
+    E('Info').textContent=`${lines.length} linhas de ${X} interpoladas a partir das 2 últimas gerações · ${fmtN(duques)} duques e ${fmtN(ternos)} ternos acertados nos ${fmtN(teste.length)} concursos de teste`;
+    E('Toast').textContent=(lines.length<n?`Só foi possível montar ${lines.length} linhas respeitando o limite de dezenas em comum. `:'')+`Nenhuma linha repete mais de ${Math.min(F.lim||99,X-1)} dezenas de outra. Clique em VERIFICAR para conferir.`;
     E('Prog').hidden=true; travar(false);
   });
   if(tem('colar')){
