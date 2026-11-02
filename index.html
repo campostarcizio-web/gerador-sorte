@@ -127,6 +127,10 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
 .filtros legend{padding:0;margin-bottom:6px}
 .chk{display:flex;align-items:center;gap:8px;font-size:.9rem;color:var(--fg);text-transform:none;letter-spacing:0;font-weight:400;cursor:pointer}
 .chk input{width:18px;height:18px;accent-color:var(--accent);margin:0}
+.colar{flex-direction:column;align-items:stretch}
+.colar-head{display:flex;flex-direction:column;gap:4px}
+.colar textarea{width:100%;box-sizing:border-box;font-family:var(--mono);font-size:.95rem;line-height:1.6;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);resize:vertical;min-height:140px}
+.colar textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .best{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
 .best .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:.85rem;color:var(--muted)}
 </style>
@@ -158,8 +162,8 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
       </div>
       <div class="field">
         <label for="n">Linhas</label>
-        <input type="number" id="n" min="1" max="100" value="20" inputmode="numeric">
-        <span class="hint">padrão 20</span>
+        <input type="number" id="n" min="1" max="200" value="20" inputmode="numeric">
+        <span class="hint">de 1 a 200</span>
       </div>
       <div class="field">
         <label for="meta">Meta por concurso</label>
@@ -261,6 +265,8 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
       <button type="submit" class="primary" id="gerar">GERAR SEQUÊNCIA</button>
       <button type="button" class="primary alt" id="gerar10" title="Gera 10 vezes e mantém as linhas mais eficientes de todas as rodadas">GERAR 10× (MELHORES)</button>
       <button type="button" class="primary alt" id="otimizar" title="Troca só as dezenas que menos contribuem em cada linha, mantendo as boas">OTIMIZAR</button>
+      <button type="button" class="primary alt" id="interpolar" title="Junta os duques e ternos que as duas últimas gerações acertaram nos concursos de teste e monta novas linhas com eles">INTERPOLAR</button>
+      <button type="button" id="colar" title="Cole as suas próprias linhas para verificar os acertos no histórico">COLAR</button>
       <button type="button" class="verify" id="verificar">VERIFICAR</button>
     </div>
     <span class="err" id="err" hidden></span>
@@ -274,6 +280,19 @@ button.alt{background:var(--surface);color:var(--accent);border-color:var(--acce
       <label class="file">Carregar outro CSV<input type="file" id="csv" accept=".csv,.txt"></label>
     </div>
   </form>
+
+  <section class="panel colar" id="colarBox" hidden>
+    <div class="colar-head">
+      <label for="colarTxt" class="lbl">Cole as suas linhas</label>
+      <span class="hint">uma linha por jogo, de 6 a 20 dezenas entre 1 e 60, separadas por espaço, vírgula, ponto e vírgula ou hífen; todas com a mesma quantidade de dezenas. As linhas aparecem logo abaixo; depois clique em VERIFICAR.</span>
+    </div>
+    <textarea id="colarTxt" rows="8" spellcheck="false" placeholder="04 11 23 35 47 58&#10;02 15 28 33 41 60&#10;07, 19, 22, 38, 44, 51"></textarea>
+    <div class="actions">
+      <button type="button" id="colarLimpar">Limpar</button>
+      <button type="button" id="colarCancelar">Fechar</button>
+    </div>
+    <span class="err" id="colarErr" hidden></span>
+  </section>
 
   <div class="meta"><span id="info"></span><span class="toast" id="toast"></span></div>
   <ol id="out"></ol>
@@ -17341,7 +17360,7 @@ const NOMES=['','','','Terno','Quadra','Quina','Sena'];
 const naMeta=(h,k)=>k===0?h===0:h>=k;
 const PLURAL=['Zeros','1 acerto','Duques','Ternos','Quadras','Quinas','Senas'];
 const META=['zero','1 acerto','duque','terno','quadra','quina','sena'];
-let current=[], draws=[], cfg=null, busy=false;
+let current=[], draws=[], cfg=null, busy=false, historico=[];
 
 /* ---------- amostragem ---------- */
 function parseCSV(txt){
@@ -17416,6 +17435,7 @@ function otimizarLinha(train,byNum,covered,x,k,iters,prev=[],lim=99,T0=1.5,eq=fa
   let score=0;for(let d=0;d<D;d++) if(!covered[d]) score+=g[hits[d]];
   // limite de dezenas em comum com as linhas já escolhidas (penalidade por excesso)
   const P=prev.map(l=>{const m=new Uint8Array(61);l.forEach(v=>m[v]=1);return m});
+  const comV=Array.from({length:62},()=>[]); prev.forEach((l,j)=>l.forEach(v=>comV[v].push(j)));
   const ov=P.map(m=>line.reduce((s,v)=>s+m[v],0));
   const PEN=8; let exc=ov.reduce((s,o)=>s+Math.max(0,o-lim),0);
   score-=PEN*exc;
@@ -17434,12 +17454,13 @@ function otimizarLinha(train,byNum,covered,x,k,iters,prev=[],lim=99,T0=1.5,eq=fa
     for(const d of byNum[a]){if(!covered[d]) delta+=g[hits[d]-1]-g[hits[d]]; hits[d]--}
     for(const d of byNum[b]){if(!covered[d]) delta+=g[hits[d]+1]-g[hits[d]]; hits[d]++}
     let dexc=0;
-    for(let j=0;j<P.length;j++){const o=ov[j],n=o-P[j][a]+P[j][b];dexc+=Math.max(0,n-lim)-Math.max(0,o-lim)}
+    if(lim<99){for(const j of comV[a]) if(!P[j][b]){const o=ov[j];dexc+=Math.max(0,o-1-lim)-Math.max(0,o-lim)}
+      for(const j of comV[b]) if(!P[j][a]){const o=ov[j];dexc+=Math.max(0,o+1-lim)-Math.max(0,o-lim)}}
     delta-=PEN*dexc;
     const dR=rep(b)-rep(a); delta-=PENR*dR;
     if(delta>=0||Math.random()<Math.exp(delta/T)){
       line[pi]=b;inL[a]=0;inL[b]=1;score+=delta;exc+=dexc;excR+=dR;pares+=(b%2===0?1:0)-(a%2===0?1:0);
-      for(let j=0;j<P.length;j++) ov[j]+=P[j][b]-P[j][a];
+      for(const j of comV[a]) if(!P[j][b]) ov[j]--; for(const j of comV[b]) if(!P[j][a]) ov[j]++;
       if(exc===0&&score>best+1e-9){best=score;bestLine=line.slice()}
     }else{
       for(const d of byNum[b]) hits[d]--;
@@ -17457,7 +17478,7 @@ function setModo(m){
     $('tab-'+k).setAttribute('aria-selected',String(k===m));
     $('campos-'+k).hidden=k!==m; $('desc-'+k).hidden=k!==m;
   }
-  $('gerar10').hidden=m!=='otim'; $('otimizar').hidden=m!=='otim';
+  $('gerar10').hidden=m!=='otim'; $('otimizar').hidden=m!=='otim'; $('colar').hidden=m!=='otim'; $('interpolar').hidden=m!=='otim'; if(m!=='otim') $('colarBox').hidden=true;
   $('megaSec').hidden=['loto','lf','qn'].includes(m); $('lmSec').hidden=m!=='loto'; $('lfSec').hidden=m!=='lf'; $('qnSec').hidden=m!=='qn';
   $('tab-loto').setAttribute('aria-selected',String(m==='loto')); $('tab-lf').setAttribute('aria-selected',String(m==='lf')); $('tab-qn').setAttribute('aria-selected',String(m==='qn'));
   $('err').hidden=true;
@@ -17649,7 +17670,7 @@ async function gerarOtim(rodadas=1){
   if(busy) return;
   const x=parseInt($('x').value,10),n=parseInt($('n').value,10),k=parseInt($('meta').value,10),t=parseInt($('teste').value,10);
   if(!(x>=6&&x<=20)){showErr('X precisa ser um número inteiro entre 6 e 20.');return}
-  if(!(n>=1&&n<=100)){showErr('Linhas precisa ser um número entre 1 e 100.');return}
+  if(!(n>=1&&n<=200)){showErr('Linhas precisa ser um número entre 1 e 200.');return}
   if($('fTodos').checked&&n*x<60){showErr(`Para incluir todas as dezenas de 1 a 60, linhas × números precisa dar pelo menos 60. Com ${x} números por linha, use pelo menos ${Math.ceil(60/x)} linhas.`);return}
   if(!(t>=0&&t<=draws.length-200)){showErr(`Concursos de teste precisa ficar entre 0 e ${fmtN(draws.length-200)}, para sobrar amostragem de otimização.`);return}
   $('err').hidden=true; travar(true);
@@ -17676,7 +17697,7 @@ async function gerarOtim(rodadas=1){
     const g=rod*etapas+e;
     $('progBar').style.width=`${(g/total*100).toFixed(1)}%`;
     const seg=g?Math.round((Date.now()-t0)/1000*(total-g)/g):null;
-    $('progTxt').textContent=cab+txt+(seg!==null&&(maxima||rodadas>1)?` · cerca de ${seg<60?seg+' s':Math.ceil(seg/60)+' min'} restantes`:'');
+    $('progTxt').textContent=cab+txt+(seg!==null&&(maxima||rodadas>1||n>40)?` · cerca de ${seg<60?seg+' s':Math.ceil(seg/60)+' min'} restantes`:'');
   };
   const pontos=l=>{const g=new Float64Array(8);for(let h=0;h<8;h++)g[h]=k===0?(h===0?1:(h===1?0.02:0)):(h>=k?(eq?1:1+0.25*(h-k)):(h===k-1?0.02:0));
     const has=new Uint8Array(61);l.forEach(v=>has[v]=1);let s=0;for(const d of treino){let h=0;for(const v of d.n)h+=has[v];s+=g[h]}return s};
@@ -17741,6 +17762,7 @@ async function gerarOtim(rodadas=1){
   }
   $('progBar').style.width='100%';
   current=lines; cfg={mode:'otim',x,n,k,t,soma,eq,semSeq,parImpar,lim,cap,todos,cliques:0};
+  historico.push({lines:lines.map(l=>l.slice()),x,t}); if(historico.length>2) historico.shift();
   const cob=covered.reduce((s,v)=>s+v,0);
   const out=$('out');out.classList.remove('fresh');void out.offsetWidth;out.classList.add('fresh');
   render(null);
@@ -17758,7 +17780,7 @@ async function gerarOtim(rodadas=1){
   $('prog').hidden=true; $('toast').textContent='';
   travar(false);
 }
-function travar(on){busy=on;['gerar','gerar10','verificar','otimizar'].forEach(id=>$(id).disabled=on)}
+function travar(on){busy=on;['gerar','gerar10','verificar','otimizar','colar','interpolar'].forEach(id=>$(id).disabled=on)}
 
 /* ---------- OTIMIZAR: troca só as dezenas ruins ----------
    Em cada linha, mede quanto cada dezena contribui para a pontuação no histórico de otimização.
@@ -17930,7 +17952,7 @@ function bloco(S,rotulo,classe,completo){
   const esp=h=>comb(x,h)*comb(60-x,6-h)/comb(60,6)*total;
   const media=S.dist.reduce((s,v,h)=>s+v*h,0)/total;
   const maxDist=Math.max(...S.dist,...[0,1,2,3,4,5,6].map(esp));
-  const porPremio=cfg.mode==='otim'&&cfg.soma;
+  const porPremio=(cfg.mode==='otim'&&cfg.soma)||cfg.mode==='colado'||cfg.mode==='interp';
   const premObs=S.dist.reduce((a,v,h)=>a+(naMeta(h,k)?v:0),0), premEsp=[0,1,2,3,4,5,6].filter(h=>naMeta(h,k)).reduce((a,h)=>a+esp(h),0);
   const razao=porPremio?(premEsp>0?premObs/premEsp:0):(S.cobEsp>0?S.cob/S.cobEsp:0);
   const rows=[0,1,2,3,4,5,6].map(h=>{
@@ -17973,23 +17995,174 @@ function bloco(S,rotulo,classe,completo){
 }
 function verificar(){
   if(busy||!current.length||!cfg) return;
-  const {treino,teste}=split(cfg.t);
+  // linhas coladas: amostragem completa + os concursos de teste definidos no campo "Concursos de teste"
+  if(cfg.mode==='colado') cfg.t=Math.max(0,Math.min(parseInt($('teste').value,10)||0,draws.length-50));
+  const sp=split(cfg.t), treino=cfg.mode==='colado'?draws:sp.treino, teste=sp.teste;
   const A=analisar(treino); render(A);
-  const fech=cfg.mode==='fech', r1=fech?'Histórico':'Otimização';
+  const fech=cfg.mode==='fech', colado=cfg.mode==='colado', interp=cfg.mode==='interp', r1=fech?'Histórico':colado?'Todos os concursos':'Otimização';
+  if(colado){const k=cfg.k, tot=A.dist, prem=tot.reduce((a,v,h)=>a+(naMeta(h,k)?v:0),0);
+    const metaTxt=cfg.eq?'prêmios (quadras + quinas + senas)':(k===0?'linhas com 0 acertos':k===1?'prêmios de 1+ acerto':META[k]+'s ou mais');
+    $('info').textContent=`${current.length} linha${current.length>1?'s':''} colada${current.length>1?'s':''} × ${cfg.x} números · ${fmtN(prem)} ${metaTxt} em todos os ${fmtN(treino.length)} concursos · `+
+      [...Array(7).keys()].filter(h=>k===0?(h===0||h>=4):(h>=Math.min(k,4)&&h>=1)).map(h=>`${PLURAL[h].toLowerCase()} ${fmtN(tot[h])}`).join(', ')}
   let html=bloco(A,r1,'',true);
   if(teste.length){
     const B=analisar(teste);
-    html+=bloco(B,'Teste','teste',false);
-    html+=fech
+    html+=bloco(B,interp?'Teste (usado no INTERPOLAR)':'Teste','teste',false);
+    html+=interp
+    ?`<p class="note"><b>Atenção:</b> estas linhas foram montadas com os duques e ternos que as gerações anteriores acertaram nos próprios ${fmtN(teste.length)} concursos de teste (nº ${teste[0].c} a ${teste[teste.length-1].c}). Por isso o bloco <b>Teste</b> deixou de ser um teste: os acertos ali são altos por construção, do mesmo jeito que no bloco Otimização. Para saber se o método antecipa sorteios futuros, é preciso medir em concursos que nem o GERAR nem o INTERPOLAR usaram, por exemplo os próximos sorteios.</p>`
+    :colado
+    ?`<p class="note">As linhas coladas não passaram pelo otimizador. O bloco <b>Todos os concursos</b> verifica as linhas contra a amostragem completa (${fmtN(treino.length)} concursos, nº ${treino[0].c} a ${treino[treino.length-1].c}). O bloco <b>Teste</b> repete a verificação só nos ${fmtN(teste.length)} concursos mais recentes (nº ${teste[0].c} a ${teste[teste.length-1].c}), conforme o campo "Concursos de teste". A meta usada é a escolhida em "Meta por concurso".</p>`
+    :fech
     ?`<p class="note">O bloco <b>Histórico</b> mede o fechamento nos concursos de onde saem as frequências usadas pelos botões de preenchimento. O bloco <b>Teste</b> usa os ${fmtN(teste.length)} concursos mais recentes (nº ${teste[0].c} a ${teste[teste.length-1].c}). A garantia é matemática e vale em qualquer concurso: sempre que ${cfg.m} sorteadas caem no grupo, alguma linha faz ${NOMES[cfg.k].toLowerCase()} ou mais. O que varia é com que frequência o grupo recebe ${cfg.m} sorteadas, e isso segue o acaso.</p>`
     :`<p class="note">O bloco <b>Otimização</b> mede as linhas nos mesmos concursos usados para montá-las, então o ganho sobre o acaso ali é esperado por construção. O bloco <b>Teste</b> usa os ${fmtN(teste.length)} concursos mais recentes (nº ${teste[0].c} a ${teste[teste.length-1].c}), que o otimizador não viu. É esse número que indica se o método antecipa sorteios futuros: perto de 1,00× significa desempenho igual ao de linhas aleatórias.</p>`;
   }else{
-    html+=fech?'':`<p class="note">Sem concursos de teste, todo o relatório mede as linhas nos mesmos concursos usados para montá-las. Defina "Concursos de teste" maior que zero para medir o desempenho em sorteios que o otimizador não viu.</p>`;
+    html+=fech?'':colado?`<p class="note">As linhas coladas não passaram pelo otimizador, então foram verificadas contra todos os ${fmtN(treino.length)} concursos da amostragem (nº ${treino[0].c} a ${treino[treino.length-1].c}). A meta usada é a escolhida em "Meta por concurso".</p>`:`<p class="note">Sem concursos de teste, todo o relatório mede as linhas nos mesmos concursos usados para montá-las. Defina "Concursos de teste" maior que zero para medir o desempenho em sorteios que o otimizador não viu.</p>`;
   }
   html+=`<p class="note">"Esperado" é o que linhas aleatórias com ${current[0].length} números fariam em média contra os mesmos concursos (distribuição hipergeométrica). Números em dourado nas linhas são os que coincidiram com o concurso de maior acerto de cada uma.</p>`;
   $('rel').innerHTML=html; $('rel').hidden=false;
   $('rel').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
 }
+
+/* ---------- INTERPOLAR ----------
+   Pega as duas últimas gerações, encontra os duques e ternos que cada linha acertou nos concursos
+   de teste e monta novas linhas reunindo esses grupos (os mais frequentes primeiro), respeitando
+   os filtros da tela. Grupos já usados em linhas anteriores valem menos, para espalhar os grupos. */
+function gruposDeTeste(conjuntos,teste){
+  const mapa=new Map();
+  const add=(arr,peso)=>{const c=arr.join(',');const g=mapa.get(c);if(g)g.w+=peso;else mapa.set(c,{n:arr.slice(),w:peso})};
+  for(const ls of conjuntos) for(const l of ls){
+    const has=new Uint8Array(61); l.forEach(v=>has[v]=1);
+    for(const d of teste){
+      const I=d.n.filter(v=>has[v]); if(I.length<2) continue;
+      if(I.length===2) add(I,1);
+      else for(let a=0;a<I.length;a++) for(let b=a+1;b<I.length;b++) for(let c=b+1;c<I.length;c++) add([I[a],I[b],I[c]],3);
+    }
+  }
+  return [...mapa.values()];
+}
+// monta cada linha somente pela união de grupos inteiros (terno + terno, terno + duque, ...):
+// os números de um terno ou duque nunca são retirados depois de entrar na linha
+function montarInterpolado(grupos,n,x,F){
+  const porNum=Array.from({length:61},()=>[]); grupos.forEach((g,i)=>g.n.forEach(v=>porNum[v].push(i)));
+  const usado=new Float64Array(grupos.length), lines=[], uso=new Uint16Array(62), cap=F.cap||0, maxPar=Math.ceil(x/2);
+  const peso=i=>grupos[i].w*(grupos[i].n.length===3?1.5:1)/(1+2*usado[i]);
+  for(let li=0;li<n;li++){
+    const prevM=lines.map(l=>{const m=new Uint8Array(62);l.forEach(v=>m[v]=1);return m});
+    // cabe: o conjunto de números novos pode entrar sem quebrar os filtros?
+    const cabe=(inL,novos)=>{
+      const tam=inL.reduce((s,v)=>s+v,0)+novos.length; if(tam>x) return false;
+      const m=inL.slice(); for(const v of novos){ if(m[v]) return false; m[v]=1 }
+      if(F.semSeq) for(const v of novos) if((v>1&&m[v-1])||(v<60&&m[v+1])) return false;
+      if(F.parImpar){let p=0,q=0;for(let v=1;v<=60;v++) if(m[v]) (v%2===0?p++:q++); if(p>maxPar||q>maxPar) return false}
+      if(cap) for(const v of novos) if(uso[v]>=cap) return false;
+      if(F.lim<99) for(const pm of prevM){let o=0;for(let v=1;v<=60;v++) if(m[v]&&pm[v]) o++; if(o>F.lim) return false}
+      return true;
+    };
+    // ganho: peso dos grupos que ficam inteiros na linha ao acrescentar "novos"
+    const ganho=(inL,novos)=>{
+      const m=inL.slice(); novos.forEach(v=>m[v]=1); let s=0; const vistos=new Set();
+      for(const v of novos) for(const i of porNum[v]){ if(vistos.has(i)) continue; vistos.add(i);
+        if(grupos[i].n.every(w=>m[w])) s+=peso(i) }
+      return s;
+    };
+    const ordem=grupos.map((g,i)=>i).sort((a,b)=>peso(b)-peso(a));
+    const inicios=ordem.filter(i=>grupos[i].n.length===3).slice(0,10);
+    if(inicios.length<3) inicios.push(...ordem.slice(0,10-inicios.length));
+    let melhor=null;
+    for(const ini of inicios){
+      const inL=new Uint8Array(62);
+      if(!cabe(inL,grupos[ini].n)) continue;
+      grupos[ini].n.forEach(v=>inL[v]=1);
+      let total=ganho(new Uint8Array(62),grupos[ini].n);
+      while(true){
+        const tam=inL.reduce((s,v)=>s+v,0); if(tam>=x) break;
+        // próximo grupo inteiro (terno ou duque) que mais acrescenta
+        let bg=null;
+        for(const i of ordem){
+          const novos=grupos[i].n.filter(v=>!inL[v]);
+          if(!novos.length||!cabe(inL,novos)) continue;
+          const gn=ganho(inL,novos)/novos.length;
+          if(!bg||gn>bg.gn||(gn===bg.gn&&grupos[i].n.length>grupos[bg.i].n.length)) bg={i,novos,gn};
+        }
+        if(bg&&bg.gn>0){ bg.novos.forEach(v=>inL[v]=1); total+=bg.gn*bg.novos.length; continue }
+        // nenhum grupo cabe: completa com o número que mais fecha duques com os que já estão na linha
+        let bv=null;
+        for(let v=1;v<=60;v++){ if(inL[v]||!cabe(inL,[v])) continue; const gv=ganho(inL,[v])+Math.random()*1e-3; if(!bv||gv>bv.gv) bv={v,gv} }
+        if(!bv) break;
+        inL[bv.v]=1; total+=bv.gv;
+      }
+      const line=[]; for(let v=1;v<=60;v++) if(inL[v]) line.push(v);
+      if(line.length!==x) continue;
+      if(F.parImpar){const p=line.filter(v=>v%2===0).length; if(Math.abs(2*p-x)>1) continue}
+      if(!melhor||total>melhor.total) melhor={total,line};
+    }
+    if(!melhor){ // sem combinação que respeite tudo: relaxa limite de dezenas em comum e repetição
+      const Fr={...F,lim:99,cap:0}; const r=montarInterpolado(grupos,1,x,Fr)[0]; melhor={line:r,total:0};
+    }
+    lines.push(melhor.line); melhor.line.forEach(v=>uso[v]++);
+    const m=new Uint8Array(62); melhor.line.forEach(v=>m[v]=1);
+    grupos.forEach((g,i)=>{if(g.n.every(v=>m[v])) usado[i]++});
+  }
+  return lines;
+}
+$('interpolar').addEventListener('click',async()=>{
+  if(busy) return;
+  if(historico.length<2){showErr(historico.length?'O INTERPOLAR usa as duas últimas gerações. Clique em GERAR SEQUÊNCIA mais uma vez.':'Gere as linhas duas vezes com GERAR SEQUÊNCIA antes de usar o INTERPOLAR.');return}
+  const t=historico[1].t; if(!t){showErr('O INTERPOLAR precisa de concursos de teste. Defina "Concursos de teste" maior que zero e gere de novo.');return}
+  $('err').hidden=true; travar(true); $('prog').hidden=false; $('progTxt').textContent='Reunindo duques e ternos dos concursos de teste…'; $('progBar').style.width='30%'; await tick();
+  const {treino,teste}=split(t);
+  const grupos=gruposDeTeste(historico.map(h=>h.lines),teste);
+  const n=parseInt($('n').value,10)||historico[1].lines.length, x=historico[1].x;
+  if(!grupos.length){travar(false);$('prog').hidden=true;showErr('As duas últimas gerações não fizeram nenhum duque ou terno nos concursos de teste.');return}
+  const F={semSeq:$('fSeq').checked,parImpar:$('fPar').checked,lim:parseInt($('lim').value,10)||99,cap:$('fRep').checked?Math.ceil(n*x/60):0};
+  $('progTxt').textContent=`Montando ${n} linhas com ${fmtN(grupos.length)} duques e ternos…`; $('progBar').style.width='60%'; await tick();
+  const lines=montarInterpolado(grupos,n,x,F);
+  const metaV=$('meta').value;
+  current=lines; cfg={mode:'interp',x,n,k:parseInt(metaV,10),t,soma:true,eq:metaV==='4t'};
+  const out=$('out');out.classList.remove('fresh');void out.offsetWidth;out.classList.add('fresh');
+  render(null); $('rel').hidden=true;
+  const ternos=grupos.filter(g=>g.n.length===3).length, duques=grupos.length-ternos;
+  const dentro=grupos.filter(g=>lines.some(l=>g.n.every(v=>l.includes(v)))).length;
+  $('info').textContent=`${n} linhas × ${x} números interpoladas a partir das 2 últimas gerações · ${fmtN(duques)} duques e ${fmtN(ternos)} ternos acertados nos ${fmtN(teste.length)} concursos de teste · ${fmtN(dentro)} desses grupos estão inteiros nas novas linhas`;
+  $('toast').textContent='Clique em VERIFICAR para conferir.';
+  $('prog').hidden=true; travar(false);
+});
+
+/* ---------- COLAR: verifica linhas digitadas ou coladas pelo usuário ---------- */
+$('colar').addEventListener('click',()=>{
+  const box=$('colarBox'); box.hidden=!box.hidden;
+  if(!box.hidden){$('colarErr').hidden=true; $('colarTxt').focus()}
+});
+$('colarCancelar').addEventListener('click',()=>{$('colarBox').hidden=true});
+// ao colar ou digitar, as linhas aparecem abaixo; o botão VERIFICAR faz a verificação
+function carregarColadas(){
+  if(busy) return;
+  const err=m=>{$('colarErr').textContent=m;$('colarErr').hidden=false};
+  const linhas=[], ignoradas=[];
+  $('colarTxt').value.split(/\r?\n/).forEach((raw,i)=>{
+    const t=raw.trim(); if(!t) return;
+    const nums=(t.match(/\d+/g)||[]).map(Number);
+    const unicos=[...new Set(nums.filter(v=>v>=1&&v<=60))];
+    if(unicos.length<6||unicos.length>20||unicos.length!==nums.length) ignoradas.push(i+1);
+    else linhas.push(unicos.sort((a,b)=>a-b));
+  });
+  $('colarErr').hidden=true;
+  if(!$('colarTxt').value.trim()) return;
+  if(!linhas.length){err('Nenhuma linha válida ainda. Cada linha precisa ter de 6 a 20 dezenas diferentes entre 1 e 60.');return}
+  const tam=[...new Set(linhas.map(l=>l.length))];
+  if(tam.length>1){err(`As linhas têm quantidades diferentes de dezenas (${tam.sort((a,b)=>a-b).join(', ')}). Deixe só linhas com a mesma quantidade.`);return}
+  if(linhas.length>200){err(`São ${linhas.length} linhas. O máximo é 200.`);return}
+  const x=linhas[0].length, metaV=$('meta').value;
+  current=linhas; cfg={mode:'colado',x,n:linhas.length,k:parseInt(metaV,10),t:0,soma:true,eq:metaV==='4t'};
+  render(null); $('rel').hidden=true;
+  $('info').textContent=`${linhas.length} linha${linhas.length>1?'s':''} colada${linhas.length>1?'s':''} × ${x} números · clique em VERIFICAR para conferir os acertos em todos os ${fmtN(draws.length)} concursos`;
+  $('toast').textContent=ignoradas.length?`Linha${ignoradas.length>1?'s':''} ignorada${ignoradas.length>1?'s':''} por formato inválido: ${ignoradas.join(', ')}.`:'';
+}
+let colarTimer=null;
+$('colarTxt').addEventListener('input',()=>{clearTimeout(colarTimer);colarTimer=setTimeout(carregarColadas,250)});
+$('colarLimpar').addEventListener('click',()=>{$('colarTxt').value='';$('colarErr').hidden=true;$('colarTxt').focus()});
+// a meta pode mudar depois de colar: a verificação usa a meta atual
+$('meta').addEventListener('change',()=>{if(cfg&&cfg.mode==='colado'){const v=$('meta').value;cfg.k=parseInt(v,10);cfg.eq=v==='4t'}});
 
 $('form').addEventListener('submit',e=>{e.preventDefault();gerar()});
 $('verificar').addEventListener('click',verificar);
@@ -18002,7 +18175,7 @@ $('copy').addEventListener('click',()=>{
     $('toast').textContent='Texto selecionado. Use Ctrl+C para copiar.';});
 });
 preencher('mais');
-gerar();
+$('info').textContent='Nenhuma linha ainda. Ajuste as opções e clique em GERAR SEQUÊNCIA, ou use COLAR para verificar as suas linhas.';
 /* ======================= Abas de loteria (Lotomania, Lotofácil) =======================
    Mesma metodologia da Mega-Sena: recozimento simulado por linha somando prêmios
    no histórico de otimização, limite de dezenas em comum, rodadas 10× com banco das
@@ -18020,7 +18193,7 @@ function criarAba(C){
     <form class="panel" id="${p}Form">
       <p class="modo-desc" style="max-width:none">${C.desc}</p>
       <div class="field"><label for="${p}X">Números por linha</label>${xOpts}</div>
-      <div class="field"><label for="${p}N">Linhas</label><input type="number" id="${p}N" min="1" max="50" value="${C.linhasDef}" inputmode="numeric"><span class="hint">de 1 a 50</span></div>
+      <div class="field"><label for="${p}N">Linhas</label><input type="number" id="${p}N" min="1" max="200" value="${C.linhasDef}" inputmode="numeric"><span class="hint">de 1 a 200</span></div>
       <div class="field"><label for="${p}Meta">Meta por concurso</label><select id="${p}Meta">${C.metas.map(m=>`<option value="${m.v}"${m.def?' selected':''}>${m.t}</option>`).join('')}</select><span class="hint">faixas que contam como prêmio</span></div>
       <div class="field"><label for="${p}Lim">Dezenas em comum</label><select id="${p}Lim">${C.lims.map(v=>`<option value="${v}"${v===C.limDef?' selected':''}>até ${v}</option>`).join('')}</select><span class="hint">entre quaisquer 2 linhas</span></div>
       <div class="field"><label for="${p}Busca">Busca</label><select id="${p}Busca"><option value="rapida" selected>Rápida</option><option value="prof">Profunda</option></select><span class="hint" id="${p}BuscaHint">poucos segundos</span></div>
@@ -18114,6 +18287,7 @@ function criarAba(C){
     const hits=new Int8Array(D); for(const v of line) for(const d of byNum[v]) hits[d]++;
     let score=0; for(let d=0;d<D;d++) score+=g[hits[d]];
     const Pm=prev.map(l=>{const m=new Uint8Array(NV);l.forEach(v=>m[v]=1);return m});
+    const comV=Array.from({length:NV+1},()=>[]); prev.forEach((l,j)=>l.forEach(v=>comV[v].push(j)));
     const ov=Pm.map(m=>line.reduce((s,v)=>s+m[v],0)), PEN=4;
     let exc=ov.reduce((s,o)=>s+Math.max(0,o-lim),0); score-=PEN*exc;
     let excR=0; for(const v of line) excR+=repx(v); score-=PENR*excR;
@@ -18127,12 +18301,13 @@ function criarAba(C){
       let delta=0;
       for(const d of byNum[a]){delta+=g[hits[d]-1]-g[hits[d]];hits[d]--}
       for(const d of byNum[b]){delta+=g[hits[d]+1]-g[hits[d]];hits[d]++}
-      let de=0; for(let j=0;j<Pm.length;j++){const o=ov[j],n=o-Pm[j][a]+Pm[j][b];de+=Math.max(0,n-lim)-Math.max(0,o-lim)}
+      let de=0; for(const j of comV[a]) if(!Pm[j][b]){const o=ov[j];de+=Math.max(0,o-1-lim)-Math.max(0,o-lim)}
+      for(const j of comV[b]) if(!Pm[j][a]){const o=ov[j];de+=Math.max(0,o+1-lim)-Math.max(0,o-lim)}
       delta-=PEN*de;
       const dR=repx(b)-repx(a); delta-=PENR*dR;
       if(delta>=0||Math.random()<Math.exp(delta/T)){
         line[pi]=b;inL[a]=0;inL[b]=1;score+=delta;exc+=de;excR+=dR;pares+=(b%2===0?1:0)-(a%2===0?1:0);
-        for(let j=0;j<Pm.length;j++) ov[j]+=Pm[j][b]-Pm[j][a];
+        for(const j of comV[a]) if(!Pm[j][b]) ov[j]--; for(const j of comV[b]) if(!Pm[j][a]) ov[j]++;
         if(exc===0&&score>best+1e-9){best=score;bestLine=line.slice()}
       }else{for(const d of byNum[b]) hits[d]--; for(const d of byNum[a]) hits[d]++}
     }
@@ -18146,7 +18321,7 @@ function criarAba(C){
   async function gerar(rodadas){
     if(S.busy||!S.draws.length) return;
     const X=parseInt(E('X').value,10), n=parseInt(E('N').value,10), t=parseInt(E('Teste').value,10), lim=parseInt(E('Lim').value,10), meta=E('Meta').value;
-    if(!(n>=1&&n<=50)){erro('Linhas precisa ser um número entre 1 e 50.');return}
+    if(!(n>=1&&n<=200)){erro('Linhas precisa ser um número entre 1 e 200.');return}
     if(!(t>=0&&t<=S.draws.length-300)){erro(`Concursos de teste precisa ficar entre 0 e ${fmtN(S.draws.length-300)}.`);return}
     if(lim<2*X-C.U){erro(`Com ${X} números por linha, duas linhas sempre têm pelo menos ${2*X-C.U} dezenas em comum. Escolha um limite maior.`);return}
     const F=C.filtros?{maxRun:liga('FSeq')?1:(liga('FSeqMax')?C.seqMax:99),pares:tem('par')?paresPermitidos(X):null,todos:liga('FTodos'),cap:liga('FRep')?Math.ceil(n*X/C.U):0}:{};
@@ -18170,7 +18345,7 @@ function criarAba(C){
       lines=[];
       for(let i=0;i<n;i++){
         const e=r*n+i, seg=e?Math.round((Date.now()-t0)/1000*(total-e)/e):null;
-        E('ProgTxt').textContent=(rodadas>1?`Rodada ${r+1} de ${rodadas}${melhor?` (melhor até agora: ${fmtN(melhor.v)})`:''} · `:'')+`Otimizando linha ${i+1} de ${n} sobre ${fmtN(D)} concursos…`+(seg!==null&&(prof||rodadas>1)?` · cerca de ${seg<60?seg+' s':Math.ceil(seg/60)+' min'} restantes`:'');
+        E('ProgTxt').textContent=(rodadas>1?`Rodada ${r+1} de ${rodadas}${melhor?` (melhor até agora: ${fmtN(melhor.v)})`:''} · `:'')+`Otimizando linha ${i+1} de ${n} sobre ${fmtN(D)} concursos…`+(seg!==null&&(prof||rodadas>1||n>40)?` · cerca de ${seg<60?seg+' s':Math.ceil(seg/60)+' min'} restantes`:'');
         E('ProgBar').style.width=`${(e/total*100).toFixed(1)}%`;
         await tick();
         let m=null; for(let k=0;k<restarts;k++){const res=otimizarLinha(treino,B,X,iters,lines,lim,P,F);if(!m||res.score>m.score)m=res}
@@ -18433,7 +18608,7 @@ function criarAba(C){
     const r=new FileReader();
     r.onload=()=>{const rows=parse(r.result);
       if(rows.length<300){erro(`O arquivo precisa ter pelo menos 300 concursos no formato concurso;data;dezenas, com ${C.K} dezenas por linha.`);return}
-      E('Err').hidden=true; setDraws(rows,file.name); gerar(1);};
+      E('Err').hidden=true; setDraws(rows,file.name); E('Info').textContent='Amostragem carregada. Clique em GERAR SEQUÊNCIA para criar as linhas.';};
     r.readAsText(file);
   });
   E('Form').addEventListener('submit',e=>{e.preventDefault();gerar(1)});
@@ -18446,7 +18621,7 @@ function criarAba(C){
     navigator.clipboard?.writeText(txt).then(()=>{E('Toast').textContent='Sequências copiadas.'}).catch(()=>{E('Toast').textContent='Não foi possível copiar automaticamente.'});
   });
   const emb=document.getElementById(C.embed), rows=emb?parse(emb.textContent):[];
-  setDraws(rows,C.arquivo); if(rows.length) gerar(1);
+  setDraws(rows,C.arquivo); if(rows.length) E('Info').textContent='Nenhuma linha ainda. Ajuste as opções e clique em GERAR SEQUÊNCIA.';
   return S;
 }
 criarAba({p:'lm',nome:'Lotomania',arquivo:'lotomania.csv',embed:'dadosLM',U:100,base:0,K:20,X:{fixo:50},cols:10,linhasDef:10,
